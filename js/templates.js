@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
   schoolPhone: '',
   schoolAddress: '',
   schoolLogoUrl: null, // dataURL
+  ttsUrl: '', // TTS sunucusu (boşsa otomatik bul)
+  ttsAuto: true,
 };
 
 export const DEFAULT_FIELDS = {
@@ -17,43 +19,54 @@ export const DEFAULT_FIELDS = {
   sign: 'Sınıf Öğretmeni Ayşe Yılmaz',
 };
 
+/** İlk açılışta preview'da gösterilen sinematik demo sahne içeriği */
+export const DEMO_FIELDS = {
+  school: 'Zeynep Kamil İlkokulu',
+  title: 'VELİ TOPLANTISI',
+  date: '25 EYLÜL',
+  time: '14:30',
+  location: 'Okul Konferans Salonu',
+  body: 'Değerli velilerimiz, çocuklarımızın gelişimini birlikte konuşmak için toplantımıza hepinizi bekliyoruz.\nKatılımınız bizim için çok değerli.\nGörüşmek dileğiyle.',
+  sign: 'Sınıf Öğretmeni Ayşe Yılmaz',
+};
+
 /**
  * Video tasarım şablonları.
- * layout: her sahnenin çizimi renderer.js içinde; buradaki renk/yazı/düzen
- * değerleri o çizimi yönlendirir.
+ * layout: sahne çizimleri renderer.js içinde; buradaki renk/yazı/düzen
+ * değerleri çizimi yönlendirir.
  */
 export const VIDEO_TEMPLATES = {
-  clean: {
-    id: 'clean',
-    label: 'Sade',
-    desc: 'Minimal, net, okunaklı',
-    swatch: ['#FAF9F6', '#16130F', '#E4572E'],
-    bg: '#FAF9F6',
-    ink: '#16130F',
-    muted: '#6E675E',
-    accent: '#E4572E',
-    surface: 'rgba(22, 19, 15, 0.05)',
-    line: 'rgba(22, 19, 15, 0.16)',
+  cinematic: {
+    id: 'cinematic',
+    label: 'Sinematik',
+    desc: 'Geniş atmosfer, editoryal tipografi',
+    swatch: ['#0B1016', '#1C2A33', '#F2B544'],
+    bg: '#0B1016',
+    ink: '#F5EFE4',
+    muted: '#A9B4BE',
+    accent: '#F2B544',
+    surface: 'rgba(245, 239, 228, 0.07)',
+    line: 'rgba(245, 239, 228, 0.22)',
     title: {
       font: 'Space Grotesk',
       weight: 800,
-      size: 96,
-      uppercase: false,
-      align: 'left',
-      letterSpacing: 0,
-      maxWidth: 880,
+      size: 92,
+      uppercase: true,
+      align: 'center',
+      letterSpacing: 3,
+      maxWidth: 940,
     },
     body: {
       font: 'Inter',
-      weight: 500,
-      size: 46,
-      lineHeight: 1.55,
+      weight: 400,
+      size: 42,
+      lineHeight: 1.62,
       maxWidth: 860,
-      align: 'left',
+      align: 'center',
     },
-    capsLabel: { font: 'Inter', weight: 600, size: 24, tracking: 3.5 },
+    capsLabel: { font: 'Space Grotesk', weight: 600, size: 22, tracking: 6 },
     motion: { enter: 'up', exit: 'fade', accentIn: 'draw' },
-    decor: 'editorial',
+    decor: 'cinematic',
   },
 
   school: {
@@ -189,7 +202,7 @@ export const VIDEO_TEMPLATES = {
   },
 };
 
-export const TEMPLATE_ORDER = ['clean', 'school', 'event', 'warm', 'urgent'];
+export const TEMPLATE_ORDER = ['cinematic', 'school', 'event', 'warm', 'urgent'];
 
 /** Duyuru metni şablonları (sol panel) */
 export const MESSAGE_TEMPLATES = [

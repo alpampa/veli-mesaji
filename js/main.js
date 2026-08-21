@@ -1,20 +1,25 @@
-/* Veli Mesajı Studio — ana uygulama */
+/* Veli Mesajı Studio — ana uygulama (V2)
+ *
+ * TTS üretimi sunucu tarafındadır (server/server.py). Bu dosya yalnızca
+ * sunucuyu bulur, ses listesini çeker ve WAV'ı oynatır.
+ */
 
 import {
-  $, $$, clamp, clamp01, fmtClock, wordsOf, estimateSeconds,
+  $, $$, clamp, fmtClock, wordsOf, estimateSeconds,
   debounce, loadJSON, saveJSON, escapeHtml,
 } from './utils.js';
 import {
   VIDEO_TEMPLATES, TEMPLATE_ORDER, MESSAGE_TEMPLATES,
-  DEFAULT_FIELDS, DEFAULT_SETTINGS,
+  DEFAULT_FIELDS, DEFAULT_SETTINGS, DEMO_FIELDS,
 } from './templates.js';
 import { AudioEngine } from './audio.js';
 import { buildScenes, SCENE_LABEL } from './scenes.js';
 import { StudioRenderer } from './renderer.js';
-import { PiperProvider, BrowserSpeechProvider, AI_VOICES } from './tts.js';
 import {
-  validateBeforeExport, exportVideo, downloadBlob, shareFile,
-  waShareUrl, mailtoUrl,
+  BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT, PROVIDER_META,
+} from './tts.js';
+import {
+  validateBeforeExport, exportVideo, shareFile, waShareUrl, mailtoUrl,
 } from './exporter.js';
 
 const DRAFT_KEY = 'vms.v2.draft';
@@ -25,7 +30,7 @@ const MAX_SECONDS = 40;
 
 const state = {
   fields: { ...DEFAULT_FIELDS, school: '' },
-  templateId: 'clean',
+  templateId: 'cinematic',
   audio: null, // { kind, name, blob, buffer, duration, peaks, url }
   sameCheck: false,
   settings: { ...DEFAULT_SETTINGS, ...loadJSON(SETTINGS_KEY, {}) },
@@ -33,13 +38,15 @@ const state = {
 
 const audioEngine = new AudioEngine();
 const renderer = new StudioRenderer($('#stage'));
-const piper = new PiperProvider();
+const tts = new BackendTTSProvider();
 const speech = new BrowserSpeechProvider();
 
 let previewTime = 0;
 let playing = false;
 let rafId = null;
 let fallbackClock = null; // ses bitince manuel saat
+let demoMode = false;
+let demoClock = null;
 let lastResultUrl = null;
 let lastResultName = 'veli-mesaji.mp4';
 
@@ -49,13 +56,14 @@ const els = {
   school: $('#school'), title: $('#title'), date: $('#date'), time: $('#time'),
   location: $('#location'), body: $('#body'), sign: $('#sign'),
   msgEstimate: $('#msgEstimate'), msgTemplates: $('#msgTemplates'),
+  clearBtn: $('#clearBtn'),
   templateGrid: $('#templateGrid'), readiness: $('#readiness'),
   stageEmpty: $('#stageEmpty'),
   playBtn: $('#playBtn'), icPlay: $('.t-ic-play'), icPause: $('.t-ic-pause'),
   tCur: $('#tCur'), tDur: $('#tDur'), tNote: $('#tNote'),
   timeline: $('#timeline'),
   voiceTabs: $$('.tab', $('#voiceTabs')), tabBodies: $$('.tab-body'),
-  voiceCards: $('#voiceCards'), ttsStatus: $('#ttsStatus'),
+  voiceGallery: $('#voiceGallery'), ttsSetup: $('#ttsSetup'), ttsStatus: $('#ttsStatus'),
   recBtn: $('#recBtn'), recStop: $('#recStop'), recLabel: $('#recLabel'),
   recFill: $('#recFill'), recTime: $('#recTime'), recHint: $('#recHint'), recErr: $('#recErr'),
   dropZone: $('#dropZone'), fileInput: $('#fileInput'),
@@ -71,6 +79,7 @@ const els = {
   settingsModal: $('#settingsModal'), settingsClose: $('#settingsClose'),
   sSchool: $('#sSchool'), sPhone: $('#sPhone'), sAddress: $('#sAddress'),
   sLogoInput: $('#sLogoInput'), sLogoPreview: $('#sLogoPreview'), sLogoClear: $('#sLogoClear'),
+  sTtsUrl: $('#sTtsUrl'), sTtsAuto: $('#sTtsAuto'), sTtsTest: $('#sTtsTest'), sTtsResult: $('#sTtsResult'),
   sSave: $('#sSave'), sReset: $('#sReset'),
   draftBtn: $('#draftBtn'), draftState: $('#draftState'), settingsBtn: $('#settingsBtn'),
   toast: $('#toast'),
@@ -84,10 +93,6 @@ function toast(msg, ms = 3400) {
   els.toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => els.toast.classList.remove('show'), ms);
-}
-
-function hasDateInfo() {
-  return !!(state.fields.date.trim() || state.fields.time.trim() || state.fields.location.trim());
 }
 
 function currentDuration() {
@@ -109,9 +114,47 @@ function fullText() {
   ].filter(Boolean).join('. ');
 }
 
+/* ---------------- Demo önizleme ---------------- */
+
+function startDemo() {
+  demoMode = true;
+  els.stageEmpty.classList.add('hidden');
+  renderer.setFields({ ...DEMO_FIELDS, school: state.fields.school || DEMO_FIELDS.school });
+  const dur = estimateSeconds(wordsOf(DEMO_FIELDS.body));
+  const { scenes, videoDuration: vd } = buildScenes(dur, {
+    hasDate: true, hasTime: true, hasLocation: true, hasBody: true,
+  });
+  renderer.setScenes({ scenes, videoDuration: vd });
+  previewTime = 0;
+  els.tDur.textContent = fmtClock(vd);
+  els.tNote.textContent = 'Demo sahne — kendi metninizi yazınca değişir';
+  drawTimeline();
+  updateTimeUI();
+  play();
+}
+
+function exitDemo() {
+  if (!demoMode) return;
+  demoMode = false;
+  pause();
+  els.tNote.classList.remove('warn');
+}
+
+function loopDemo() {
+  const t = demoClock.at + (performance.now() - demoClock.t0) / 1000;
+  const vd = videoDuration();
+  const wrapped = t % Math.max(0.5, vd);
+  previewTime = wrapped;
+  renderer.renderFrame(wrapped);
+  drawTimelineThrottled();
+  updateTimeUI();
+  rafId = requestAnimationFrame(loopDemo);
+}
+
 /* ---------------- Form eşitleme ---------------- */
 
 function syncFields() {
+  exitDemo();
   state.fields = {
     school: els.school.value,
     title: els.title.value,
@@ -143,10 +186,11 @@ function applyFields(f) {
 /* ---------------- Sahne kurulumu ---------------- */
 
 function refreshScenes() {
-  const hasBody = !!state.fields.body.trim();
   const { scenes, videoDuration: vd } = buildScenes(currentDuration(), {
-    hasDate: hasDateInfo(),
-    hasBody,
+    hasDate: !!state.fields.date.trim(),
+    hasTime: !!state.fields.time.trim(),
+    hasLocation: !!state.fields.location.trim(),
+    hasBody: !!state.fields.body.trim(),
   });
   renderer.setScenes({ scenes, videoDuration: vd });
   previewTime = clamp(previewTime, 0, vd);
@@ -187,10 +231,15 @@ function setPlayingUI(on) {
 function play() {
   if (!renderer.ok) return;
   const hasAny = Object.values(state.fields).some((v) => v.trim());
-  if (!hasAny && !state.audio) return;
+  if (!hasAny && !state.audio && !demoMode) return;
   playing = true;
   setPlayingUI(true);
   fallbackClock = null;
+  if (demoMode) {
+    demoClock = { at: previewTime, t0: performance.now() };
+    rafId = requestAnimationFrame(loopDemo);
+    return;
+  }
   if (state.audio) {
     audioEngine.play({
       offset: previewTime,
@@ -248,7 +297,9 @@ function seek(t) {
   t = clamp(t, 0, videoDuration());
   previewTime = t;
   if (playing) {
-    if (state.audio) {
+    if (demoMode) {
+      demoClock = { at: t, t0: performance.now() };
+    } else if (state.audio) {
       audioEngine.play({
         offset: t,
         onEnd: () => { fallbackClock = { at: audioEngine.duration, t0: performance.now() }; },
@@ -336,20 +387,20 @@ function drawTimeline() {
     ctx.fillStyle = active ? C.primary : hover ? C.ink : C.track;
     roundRect(ctx, x, 30, w, 24, 6);
     ctx.fill();
-    if (w > 46) {
-      ctx.font = '600 10.5px Inter, sans-serif';
-      ctx.fillStyle = active ? '#fff' : C.muted;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(SCENE_LABEL[s.type], x + w / 2, 42);
-    }
     // üst etiket
     if (w > 30) {
       ctx.font = '600 9px Inter, sans-serif';
       ctx.fillStyle = active ? C.primary : C.muted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(SCENE_LABEL[s.type], x + w / 2, 22);
+      ctx.fillText(SCENE_LABEL[s.type] || s.type.toUpperCase(), x + w / 2, 22);
+    }
+    if (w > 46) {
+      ctx.font = '600 10.5px Inter, sans-serif';
+      ctx.fillStyle = active ? '#fff' : C.muted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(SCENE_LABEL[s.type] || s.type.toUpperCase(), x + w / 2, 42);
     }
   });
 
@@ -462,7 +513,7 @@ function recTick() {
   els.recFill.classList.toggle('bad', recSeconds > 60);
   els.recHint.classList.remove('ok', 'warn', 'bad');
   if (recSeconds <= MAX_SECONDS) {
-    els.recHint.textContent = `Hedef: 40 sn altı`;
+    els.recHint.textContent = 'Hedef: 40 sn altı';
     els.recHint.classList.add('ok');
   } else if (recSeconds <= 60) {
     els.recHint.textContent = '40 sn doldu — kısaltın';
@@ -580,6 +631,7 @@ function handleFile(file) {
 /* ---------------- Ses: ortak ---------------- */
 
 async function setAudio({ kind, name, blob }) {
+  exitDemo();
   stopPlayback();
   let buffer;
   try {
@@ -609,6 +661,7 @@ function stopPlayback() {
 }
 
 function clearAudio() {
+  exitDemo();
   stopPlayback();
   if (state.audio) URL.revokeObjectURL(state.audio.url);
   state.audio = null;
@@ -639,56 +692,140 @@ els.vsPlay.addEventListener('click', () => {
 });
 els.vsRemove.addEventListener('click', clearAudio);
 
-/* ---------------- Yapay ses ---------------- */
-
-const SAMPLE_TEXT = 'Merhaba! Bu, veli mesajınızda kullanabileceğiniz örnek bir seslendirmedir.';
-
-function renderVoiceCards() {
-  els.voiceCards.innerHTML = '';
-  AI_VOICES.forEach((v) => {
-    const card = document.createElement('div');
-    card.className = 'voice-card';
-    card.innerHTML = `
-      <div class="vc-top">
-        <span class="vc-avatar">${v.gender === 'Kadın' ? '♀' : '♂'}</span>
-        <div class="vc-meta">
-          <div class="vc-name">${escapeHtml(v.label)}</div>
-          <div class="vc-tag">${escapeHtml(v.tag)}</div>
-        </div>
-        <span class="vc-size">~${v.sizeMB} MB</span>
-      </div>
-      <p class="vc-desc">${escapeHtml(v.desc)}</p>
-      <div class="vc-actions">
-        <button type="button" class="btn btn-sm ghost" data-act="sample">▶ Örnek Dinle</button>
-        <button type="button" class="btn btn-sm" data-act="generate">Bu sesle oluştur</button>
-      </div>`;
-    card.querySelector('[data-act="sample"]').addEventListener('click', () => sampleVoice(v, card));
-    card.querySelector('[data-act="generate"]').addEventListener('click', () => generateVoice(v, card));
-    els.voiceCards.append(card);
-  });
-}
+/* ---------------- Yapay ses: seslendirme stüdyosu ---------------- */
 
 function setTtsStatus(type, html) {
   els.ttsStatus.className = 'tts-status' + (type ? ' ' + type : '');
   els.ttsStatus.innerHTML = html || '';
 }
 
-function sampleVoice(v) {
-  if (!BrowserSpeechProvider.supported()) {
-    setTtsStatus('warn', `Bu cihazda hızlı örnek okunamıyor. "Bu sesle oluştur" ile gerçek ${v.label} sesini dinleyebilirsiniz.`);
-    return;
+async function refreshVoiceStudio() {
+  els.voiceGallery.classList.add('hidden');
+  els.ttsSetup.classList.add('hidden');
+  setTtsStatus('busy', '<div class="busy-row"><span class="spinner"></span><div>TTS sunucusu aranıyor…</div></div>');
+  try {
+    const ok = await tts.discover({
+      ttsUrl: state.settings.ttsUrl,
+      ttsAuto: state.settings.ttsAuto,
+    });
+    if (!ok) {
+      setTtsStatus('');
+      renderTtsSetup();
+      return;
+    }
+    setTtsStatus('');
+    renderVoiceGallery(tts.lastVoices);
+  } catch (err) {
+    console.error('TTS keşif hatası:', err);
+    setTtsStatus('');
+    renderTtsSetup();
   }
-  speech.stop();
-  speech.speak(SAMPLE_TEXT, {
-    onEnd: () => { if (els.ttsStatus.classList.contains('sample')) setTtsStatus(''); },
-  });
-  setTtsStatus('sample', `🔊 ${v.label} örneği okunuyor (cihaz sesi)…`);
 }
 
-function setVoiceBusy(card, busy, label) {
+function renderTtsSetup() {
+  els.voiceGallery.classList.add('hidden');
+  els.ttsSetup.classList.remove('hidden');
+  els.ttsSetup.innerHTML = `
+    <div class="setup-ic">🎙</div>
+    <h4>Yapay sesler kullanılamıyor</h4>
+    <p>TTS üretimi tarayıcıda değil, <b>yerel TTS sunucusunda</b> yapılır (gizlilik + çevrimdışı Piper desteği).</p>
+    <ol class="setup-steps">
+      <li><code>pip install -r server/requirements.txt</code></li>
+      <li><code>python server/server.py</code></li>
+      <li>Sayfayı yenileyin — <b>http://127.0.0.1:8765</b> otomatik bulunur</li>
+    </ol>
+    <p class="setup-note">GitHub Pages'ten kullanıyorsanız sunucuyu Ayarlar → TTS sunucusu bölümünden bağlayın.</p>
+    <div class="vc-actions">
+      <button type="button" class="btn btn-sm ghost" id="ttsRetry">↻ Yeniden Dene</button>
+      <button type="button" class="btn btn-sm ghost" id="ttsBrowserSample">🔊 Örnek (cihaz sesi)</button>
+    </div>
+    <p class="setup-note">Sunucu olmadan da <b>Ses Kaydı</b> ve <b>Ses Dosyası</b> sekmeleriyle video üretebilirsiniz.</p>`;
+  $('#ttsRetry').addEventListener('click', refreshVoiceStudio);
+  $('#ttsBrowserSample').addEventListener('click', () => {
+    if (speech.speak(TTS_SAMPLE_TEXT, { onEnd: () => setTtsStatus('') })) {
+      setTtsStatus('sample', '🔊 Örnek cihaz sesiyle okunuyor (yalnızca önizleme — videoya yazılmaz)');
+    } else {
+      toast('Bu cihazda sesli okuma desteklenmiyor.');
+    }
+  });
+}
+
+function renderVoiceGallery(voices) {
+  els.voiceGallery.classList.remove('hidden');
+  els.voiceGallery.innerHTML = '';
+  if (!voices.length) {
+    els.voiceGallery.innerHTML = '<p class="hint">Sunucuya bağlandı ama kullanılabilir Türkçe ses bulunamadı. Piper modeli için <code>models/piper/tr/</code> klasörüne .onnx ekleyin.</p>';
+    return;
+  }
+  const groups = {};
+  voices.forEach((v) => {
+    (groups[v.provider] = groups[v.provider] || []).push(v);
+  });
+  for (const [provider, list] of Object.entries(groups)) {
+    const meta = PROVIDER_META[provider] || { badge: provider, note: '', cls: '' };
+    const g = document.createElement('div');
+    g.className = 'vc-group';
+    g.innerHTML = `<div class="vc-group-head"><span class="vc-badge ${meta.cls}">${escapeHtml(meta.badge)}</span><span class="vc-group-note">${escapeHtml(meta.note || '')}</span></div>`;
+    const cards = document.createElement('div');
+    cards.className = 'voice-cards';
+    list.forEach((v) => cards.append(makeVoiceCard(v)));
+    g.append(cards);
+    els.voiceGallery.append(g);
+  }
+}
+
+function makeVoiceCard(v) {
+  const card = document.createElement('div');
+  card.className = 'voice-card';
+  const meta = PROVIDER_META[v.provider] || {};
+  card.innerHTML = `
+    <div class="vc-top">
+      <span class="vc-avatar">${v.gender === 'Kadın' ? '♀' : '♂'}</span>
+      <div class="vc-meta">
+        <div class="vc-name">${escapeHtml(v.name)}</div>
+        <div class="vc-tag">${escapeHtml(v.gender || '')} · ${escapeHtml(v.lang || 'Türkçe')}</div>
+      </div>
+      ${meta.badge ? `<span class="vc-badge sm ${meta.cls || ''}">${escapeHtml(meta.badge)}</span>` : ''}
+    </div>
+    <p class="vc-desc">${escapeHtml(v.style || '')}</p>
+    <div class="vc-actions">
+      <button type="button" class="btn btn-sm ghost" data-act="sample">▶ Örnek Dinle</button>
+      <button type="button" class="btn btn-sm" data-act="generate">Bu Sesle Oluştur</button>
+    </div>`;
+  card.querySelector('[data-act="sample"]').addEventListener('click', () => sampleVoice(v, card));
+  card.querySelector('[data-act="generate"]').addEventListener('click', () => generateVoice(v, card));
+  return card;
+}
+
+function setVoiceBusy(card, busy) {
   card.querySelectorAll('button').forEach((b) => { b.disabled = busy; });
-  if (busy) card.classList.add('busy');
-  else card.classList.remove('busy');
+  card.classList.toggle('busy', busy);
+}
+
+/** Gerçek sesle örnek üretir (sunucu) ve çalar */
+async function sampleVoice(v, card) {
+  setVoiceBusy(card, true);
+  setTtsStatus('busy', `<div class="busy-row"><span class="spinner"></span><div>${escapeHtml(v.name)} örneği hazırlanıyor…</div></div>`);
+  try {
+    const res = await tts.generate(TTS_SAMPLE_TEXT, v.id);
+    const url = URL.createObjectURL(res.blob);
+    const a = new Audio(url);
+    a.onended = () => {
+      URL.revokeObjectURL(url);
+      setTtsStatus('');
+    };
+    a.onerror = () => {
+      URL.revokeObjectURL(url);
+      setTtsStatus('error', 'Örnek çalınamadı.');
+    };
+    setTtsStatus('sample', `🔊 ${escapeHtml(v.name)} örneği çalıyor…`);
+    await a.play();
+  } catch (err) {
+    console.error('Örnek üretim hatası:', err);
+    setTtsStatus('error', `Örnek üretilemedi: ${escapeHtml(err.message || 'bilinmeyen hata')}`);
+  } finally {
+    setVoiceBusy(card, false);
+  }
 }
 
 async function generateVoice(v, card) {
@@ -702,25 +839,17 @@ async function generateVoice(v, card) {
     return;
   }
   setVoiceBusy(card, true);
-  setTtsStatus('busy', `<div class="busy-row"><span class="spinner"></span><div>${escapeHtml(v.label)} hazırlanıyor — ilk kullanımda ses modeli indirilir, biraz sürebilir.</div></div><div class="mini-bar"><div class="mini-fill" id="ttsFill"></div></div>`);
+  setTtsStatus('busy', `<div class="busy-row"><span class="spinner"></span><div>${escapeHtml(v.name)} seslendiriyor…</div></div>`);
   try {
-    const res = await piper.generate(
-      text,
-      v.id,
-      (p) => { const f = $('#ttsFill'); if (f) f.style.width = `${Math.round(p * 100)}%`; },
-      (msg) => {
-        const row = els.ttsStatus.querySelector('.busy-row div');
-        if (row && msg) row.textContent = msg;
-      }
-    );
-    await setAudio({ kind: 'ai', name: `${v.label} sesi`, blob: res.blob });
-    setTtsStatus('ok', `✓ ${v.label} ile seslendirildi — ${fmtClock(state.audio.duration, true)}`);
-    toast(`Ses oluşturuldu: ${v.label}`);
+    const res = await tts.generate(text, v.id);
+    await setAudio({ kind: 'ai', name: `${v.name} sesi`, blob: res.blob });
+    setTtsStatus('ok', `✓ ${escapeHtml(v.name)} ile seslendirildi — ${fmtClock(state.audio.duration, true)}`);
+    toast(`Ses oluşturuldu: ${v.name}`);
   } catch (err) {
-    console.error('TTS hatası:', err);
+    console.error('TTS üretim hatası:', err, '| voice:', v.id, '| provider:', v.provider);
     setTtsStatus('error',
-      `Seslendirme oluşturulamadı: ${escapeHtml(err.message || 'bilinmeyen hata')}<br>` +
-      'İnternet bağlantısını kontrol edin ya da <b>Kayıt</b> / <b>Dosya</b> sekmelerinden ses ekleyin.');
+      `Seslendirme oluşturulamadı.<br><span class="err-detail">${escapeHtml(err.message || 'bilinmeyen hata')}</span><br>` +
+      'Başka bir ses seçin veya <b>Kayıt</b> / <b>Dosya</b> sekmelerini kullanın.');
   } finally {
     setVoiceBusy(card, false);
   }
@@ -734,6 +863,7 @@ els.voiceTabs.forEach((tab) => {
     els.tabBodies.forEach((b) => {
       b.classList.toggle('hidden', b.dataset.tabbody !== tab.dataset.tab);
     });
+    if (tab.dataset.tab === 'ai') refreshVoiceStudio();
   });
 });
 
@@ -956,7 +1086,7 @@ async function generate() {
     els.renderModal.classList.add('hidden');
     showResult(result);
   } catch (err) {
-    console.error(err);
+    console.error('Render hatası:', err);
     els.renderMeta.textContent = 'Hata: ' + err.message;
     toast('Video üretilemedi: ' + err.message, 6000);
     setTimeout(() => els.renderModal.classList.add('hidden'), 2600);
@@ -1019,14 +1149,24 @@ els.newBtn.addEventListener('click', () => {
   els.resultModal.classList.add('hidden');
   els.resultVideo.pause();
   clearAudio();
-  els.sameCheck = false;
-  applyFields({ school: state.settings.schoolName, title: '', date: '', time: '', location: '', body: '', sign: '' });
+  state.sameCheck = false;
+  applyFields({ school: '', title: '', date: '', time: '', location: '', body: '', sign: '' });
   toast('Yeni duyuru için alanlar temizlendi');
 });
 
 els.resultClose.addEventListener('click', () => {
   els.resultModal.classList.add('hidden');
   els.resultVideo.pause();
+});
+
+/* ---------------- Temizle ---------------- */
+
+els.clearBtn.addEventListener('click', () => {
+  if (!confirm('Tüm metni ve sesi temizleyeyim mi?')) return;
+  clearAudio();
+  state.sameCheck = false;
+  applyFields({ school: '', title: '', date: '', time: '', location: '', body: '', sign: '' });
+  toast('Temizlendi');
 });
 
 /* ---------------- Ayarlar ---------------- */
@@ -1045,6 +1185,9 @@ function openSettings() {
   els.sSchool.value = state.settings.schoolName;
   els.sPhone.value = state.settings.schoolPhone;
   els.sAddress.value = state.settings.schoolAddress;
+  els.sTtsUrl.value = state.settings.ttsUrl || '';
+  els.sTtsAuto.checked = state.settings.ttsAuto !== false;
+  els.sTtsResult.textContent = tts.baseUrl ? `Bağlı: ${tts.baseUrl}` : 'Bağlı değil';
   if (state.settings.schoolLogoUrl) {
     els.sLogoPreview.innerHTML = `<img src="${escapeHtml(state.settings.schoolLogoUrl)}" alt="logo">`;
   } else {
@@ -1059,6 +1202,8 @@ function saveSettings() {
     schoolPhone: els.sPhone.value.trim(),
     schoolAddress: els.sAddress.value.trim(),
     schoolLogoUrl: state.settings.schoolLogoUrl,
+    ttsUrl: els.sTtsUrl.value.trim(),
+    ttsAuto: els.sTtsAuto.checked,
   };
   saveJSON(SETTINGS_KEY, state.settings);
   applySettingsToRenderer();
@@ -1067,11 +1212,28 @@ function saveSettings() {
   }
   els.settingsModal.classList.add('hidden');
   toast('Ayarlar kaydedildi');
+  refreshVoiceStudio();
 }
 
 els.settingsBtn.addEventListener('click', openSettings);
 els.settingsClose.addEventListener('click', () => els.settingsModal.classList.add('hidden'));
 els.sSave.addEventListener('click', saveSettings);
+
+els.sTtsTest.addEventListener('click', async () => {
+  els.sTtsResult.textContent = 'Deneniyor…';
+  const ok = await tts.discover({
+    ttsUrl: els.sTtsUrl.value.trim(),
+    ttsAuto: els.sTtsAuto.checked,
+  });
+  if (ok) {
+    els.sTtsResult.textContent = `✓ Bağlandı: ${tts.baseUrl} (${tts.lastVoices.length} ses)`;
+    els.sTtsResult.classList.add('ok');
+  } else {
+    els.sTtsResult.textContent = '✗ Ulaşılamadı — sunucunun çalıştığından emin olun.';
+    els.sTtsResult.classList.remove('ok');
+  }
+});
+
 els.sReset.addEventListener('click', () => {
   state.settings = { ...DEFAULT_SETTINGS };
   saveJSON(SETTINGS_KEY, state.settings);
@@ -1080,6 +1242,9 @@ els.sReset.addEventListener('click', () => {
   els.sSchool.value = DEFAULT_SETTINGS.schoolName;
   els.sPhone.value = '';
   els.sAddress.value = '';
+  els.sTtsUrl.value = '';
+  els.sTtsAuto.checked = true;
+  els.sTtsResult.textContent = '';
   toast('Varsayılan ayarlara dönüldü');
 });
 els.sLogoInput.addEventListener('change', (e) => {
@@ -1123,6 +1288,7 @@ const scheduleDraftSave = debounce(() => {
 els.draftBtn.addEventListener('click', () => {
   const d = loadJSON(DRAFT_KEY);
   if (!d) { toast('Henüz taslak yok.'); return; }
+  exitDemo();
   state.templateId = d.templateId || state.templateId;
   renderer.setTemplate(VIDEO_TEMPLATES[state.templateId]);
   els.templateGrid.querySelectorAll('.tmpl-card').forEach((x) =>
@@ -1138,7 +1304,7 @@ els.draftBtn.addEventListener('click', () => {
 
 function updateEmptyState() {
   const has = Object.values(state.fields).some((v) => (v || '').trim());
-  els.stageEmpty.classList.toggle('hidden', has || !!state.audio);
+  els.stageEmpty.classList.toggle('hidden', demoMode || has || !!state.audio);
 }
 
 /* ---------------- Başlat ---------------- */
@@ -1152,13 +1318,12 @@ function init() {
   renderer.setTemplate(VIDEO_TEMPLATES[state.templateId]);
   renderMsgTemplates();
   renderTemplateGrid();
-  renderVoiceCards();
   measureTimeline();
 
   // ayarları uygula
   applySettingsToRenderer();
 
-  // taslak yükle
+  // taslak yükle ya da demo başlat
   const draft = loadJSON(DRAFT_KEY);
   if (draft && draft.fields) {
     state.templateId = draft.templateId || state.templateId;
@@ -1167,12 +1332,13 @@ function init() {
       x.classList.toggle('active', x.dataset.id === state.templateId));
     state.sameCheck = !!draft.sameCheck;
     applyFields(draft.fields);
+    state.fields.school = state.fields.school || state.settings.schoolName;
   } else {
     applyFields({ school: state.settings.schoolName, ...DEFAULT_FIELDS });
     state.sameCheck = false;
+    startDemo();
   }
 
-  syncFields();
   updateReadiness();
   updateGenChecks();
 
@@ -1192,6 +1358,9 @@ function init() {
   }
 
   els.generateBtn.addEventListener('click', generate);
+
+  // TTS sunucusunu ara (ses listesi + galeri)
+  refreshVoiceStudio();
 }
 
 init();

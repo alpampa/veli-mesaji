@@ -1,4 +1,7 @@
 node_modules/
 _scratch/
+models/
+__pycache__/
+*.pyc
 *.log
 .DS_Store

@@ -6,6 +6,7 @@
   "description": "Veli Mesajı Studio — metni sesli, hareketli ve paylaşılabilir 9:16 videoya dönüştürür.",
   "scripts": {
     "test": "node tests/run.mjs",
+    "test:server": "python tests/server_test.py",
     "serve": "python -m http.server 8000"
   },
   "devDependencies": {

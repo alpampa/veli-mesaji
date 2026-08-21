@@ -123,6 +123,17 @@ button { font-family: inherit; }
 .panel-head h2 { margin: 0; font-family: var(--font-display); font-size: 15.5px; font-weight: 700; letter-spacing: -.2px; }
 .panel-note { font-size: 11.5px; font-weight: 600; color: var(--text-faint); letter-spacing: .6px; text-transform: uppercase; }
 .head-mt { margin-top: 26px; }
+.mini-link {
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--text-muted);
+  background: none; border: none; padding: 2px 6px; cursor: pointer; text-transform: uppercase; letter-spacing: .5px;
+  border-radius: 6px; transition: color var(--t-fast), background var(--t-fast);
+}
+.mini-link:hover { color: var(--danger); background: var(--danger-soft); }
+code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12px; background: var(--surface-2); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 5px; color: var(--ink);
+}
 
 /* ==================================================================
    Form
@@ -287,6 +298,40 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .hint b { color: var(--ink); }
 
 .voice-cards { display: grid; gap: 10px; }
+.vc-group { margin-bottom: 14px; }
+.vc-group-head { display: flex; align-items: center; gap: 8px; margin: 2px 2px 8px; }
+.vc-badge {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .4px;
+  color: var(--ink-soft); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px;
+}
+.vc-badge.sm { font-size: 9.5px; padding: 2px 7px; }
+.vc-badge.edge { color: #14594E; background: var(--teal-soft); border-color: #BFE8DE; }
+.vc-badge.piper { color: #4A3A10; background: #F6EED6; border-color: #E6D7A8; }
+.vc-badge.windows { color: #24365C; background: #E6ECF7; border-color: #C9D6EC; }
+.vc-group-note { font-size: 11.5px; color: var(--text-faint); }
+.err-detail { font-size: 12px; color: var(--text-muted); }
+
+.tts-setup {
+  border: 1.5px dashed var(--border-strong); border-radius: 12px;
+  padding: 16px 16px 14px; background: var(--surface-2); margin-bottom: 4px;
+}
+.tts-setup .setup-ic { font-size: 24px; }
+.tts-setup h4 { margin: 8px 0 4px; font-size: 14px; font-weight: 700; }
+.tts-setup p { margin: 6px 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
+.tts-setup p.setup-note { font-size: 11.5px; color: var(--text-faint); }
+.setup-steps { margin: 8px 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-soft); }
+.setup-steps code { white-space: nowrap; }
+
+.tts-settings { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.tts-settings .chk-inline {
+  display: flex; align-items: center; gap: 7px; margin: 8px 0 6px 2px;
+  font-size: 12.5px; font-weight: 500; color: var(--text-muted); cursor: pointer;
+}
+.tts-settings .chk-inline input { accent-color: var(--teal); width: 15px; height: 15px; cursor: pointer; }
+.tts-test-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.tts-test-result { font-size: 12.5px; color: var(--danger); font-weight: 600; }
+.tts-test-result.ok { color: var(--teal); }
 .voice-card {
   border: 1.5px solid var(--border); border-radius: 12px; padding: 13px 14px;
   background: var(--surface-2); transition: border-color var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);

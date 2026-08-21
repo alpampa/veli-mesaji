@@ -1,0 +1,10 @@
+# Veli Mesajı Studio — TTS servisi bağımlılıkları
+# Kurulum: pip install -r server/requirements.txt
+#
+# edge-tts     : Microsoft'un doğal Türkçe sesleri (internet gerekir)
+# piper-tts    : tamamen yerel/çevrimdışı TTS (model dosyaları models/piper/tr/ altında)
+# pyttsx3      : Windows SAPI5 yedek sesi (yalnızca Windows)
+
+edge-tts>=6.1.0
+piper-tts>=1.2.0
+pyttsx3>=2.90 ; platform_system == "Windows"

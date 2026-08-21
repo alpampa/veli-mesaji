@@ -1,13 +1,16 @@
 /* StudioRenderer — 1080×1920 canvas üzerinde hem canlı önizlemeyi hem
  * dışa aktarımı besleyen tek render motoru (WYSIWYG).
  *
- * Sahneler: intro → title → date → message → outro.
+ * Sahneler: intro → title → date → time → location → message → outro.
  * Her sahne şablonun motion diliyle girer ve yumuşak geçişlerle çıkar.
+ *
+ * Arka plan motoru (drawDecor): cinematic (ışık + dağ + sis + vinyet),
+ * institution, rings, arch, alert — hepsi prosedürel, harici görsele bağımlı değil.
  */
 
 import {
   clamp, clamp01, easeOutCubic, easeInOutCubic,
-  wrapLines, fitFontSize, drawRoundRect,
+  fitFontSize, drawRoundRect,
 } from './utils.js';
 import { sceneAt } from './scenes.js';
 
@@ -56,17 +59,13 @@ export class StudioRenderer {
     ctx.save();
     ctx.clearRect(0, 0, W, H);
 
-    // Arka plan
-    ctx.fillStyle = tpl.bg;
-    ctx.fillRect(0, 0, W, H);
-
-    // Dekor (çok yumuşak zoom)
+    // Arka plan + dekor (çok yumuşak zoom + sahne akışına göre paralaks)
     ctx.save();
     const z = 1 + 0.035 * clamp01(t / Math.max(1, this.videoDuration));
     ctx.translate(W / 2, H / 2);
     ctx.scale(z, z);
     ctx.translate(-W / 2, -H / 2);
-    this.drawDecor(tpl);
+    this.drawDecor(tpl, Math.max(0, t));
     ctx.restore();
 
     // Aktif sahne
@@ -89,13 +88,14 @@ export class StudioRenderer {
     ctx.restore();
   }
 
-  /* ---------------- Dekor ---------------- */
+  /* ---------------- Dekor / arka plan ---------------- */
 
-  drawDecor(tpl) {
+  drawDecor(tpl, t) {
     const ctx = this.ctx;
     switch (tpl.decor) {
+      case 'cinematic':
+        return this.decorCinematic(t);
       case 'editorial': {
-        // ince dikey çizgi + köşe vurgusu
         ctx.strokeStyle = tpl.line;
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -107,7 +107,6 @@ export class StudioRenderer {
         break;
       }
       case 'institution': {
-        // çerçeve + sağ üst yumuşak daire
         ctx.strokeStyle = tpl.line;
         ctx.lineWidth = 3;
         drawRoundRect(ctx, 58, 58, W - 116, H - 116, 14);
@@ -161,6 +160,73 @@ export class StudioRenderer {
     }
   }
 
+  /** Sinematik arka plan: gökyüzü, ışık huzmesi, paralaks dağlar, sis, vinyet */
+  decorCinematic(t) {
+    const ctx = this.ctx;
+    // gökyüzü
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#0A0F15');
+    sky.addColorStop(0.55, '#13212C');
+    sky.addColorStop(0.8, '#1E2C31');
+    sky.addColorStop(1, '#171D1E');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // ışık huzmesi (sağ üstten)
+    const beam = ctx.createLinearGradient(640, 0, 1080, 640);
+    beam.addColorStop(0, 'rgba(242, 181, 68, 0.17)');
+    beam.addColorStop(1, 'rgba(242, 181, 68, 0)');
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(780, 0);
+    ctx.lineTo(W, 0);
+    ctx.lineTo(W, 760);
+    ctx.lineTo(880, 240);
+    ctx.closePath();
+    ctx.fill();
+
+    // paralaks dağlar (global zamanla yavaş süzülür)
+    const drift = (t % 20) / 20;
+    this.ridge(ctx, { baseY: 1210, amp: 300, freq: 0.0016, phase: drift * 40, color: 'rgba(30, 44, 56, 0.95)' });
+    this.ridge(ctx, { baseY: 1330, amp: 220, freq: 0.0023, phase: -drift * 26, color: 'rgba(16, 23, 30, 0.98)' });
+
+    // sis bandı
+    const fog = ctx.createLinearGradient(0, 1050, 0, 1500);
+    fog.addColorStop(0, 'rgba(11, 16, 22, 0)');
+    fog.addColorStop(1, 'rgba(11, 16, 22, 0.5)');
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, 1050, W, 450);
+
+    // vinyet
+    const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.98);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.4)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+
+    // film greni (çok hafif)
+    ctx.fillStyle = 'rgba(255,255,255,0.045)';
+    for (let i = 0; i < 150; i++) {
+      ctx.fillRect(Math.random() * W, Math.random() * H, 1.4, 1.4);
+    }
+  }
+
+  ridge(ctx, { baseY, amp, freq, phase, color }) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-20, H + 20);
+    for (let x = -20; x <= W + 20; x += 22) {
+      const y =
+        baseY +
+        Math.sin(x * freq + phase) * amp +
+        Math.sin(x * freq * 2.3 + phase * 1.7) * amp * 0.45;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W + 20, H + 20);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   /* ---------------- Sahne giriş/çıkış ---------------- */
 
   entrance(p, kind, { enterDur = 0.85, exitStart = 0.92 } = {}) {
@@ -181,7 +247,9 @@ export class StudioRenderer {
     switch (type) {
       case 'intro': return this.sceneIntro(p, tpl, fields);
       case 'title': return this.sceneTitle(p, tpl, fields);
-      case 'date': return this.sceneDate(p, tpl, fields);
+      case 'date': return this.sceneInfo('TARİH', fields.date, p, tpl);
+      case 'time': return this.sceneInfo('SAAT', fields.time, p, tpl);
+      case 'location': return this.sceneInfo('YER', fields.location, p, tpl);
       case 'message': return this.sceneMessage(p, tpl, fields);
       case 'outro': return this.sceneOutro(p, tpl, fields);
     }
@@ -200,7 +268,6 @@ export class StudioRenderer {
     ctx.restore();
   }
 
-  /** Harf aralığını destekleyen tarayıcıda letterSpacing, yoksa elle çizer */
   tracked(ctx, text, x, y, tracking) {
     if (!tracking) {
       ctx.fillText(text, x, y);
@@ -237,33 +304,28 @@ export class StudioRenderer {
   sceneIntro(p, tpl, fields) {
     const ctx = this.ctx;
     const e = this.entrance(p, tpl.motion.enter, { enterDur: 0.9 });
-
     const school = fields.school || 'Zeynep Kamil İlkokulu';
     const cx = W / 2;
     let y0 = H / 2 - 180;
 
     ctx.save();
     ctx.globalAlpha = e.alpha;
-    ctx.translate(e.dx, e.dy + (e.scale !== 1 ? (1 - e.scale) * H / 2 : 0));
+    ctx.translate(e.dx, e.dy);
     if (e.scale !== 1) {
       ctx.translate(cx, H / 2);
       ctx.scale(e.scale, e.scale);
       ctx.translate(-cx, -H / 2);
     }
 
-    // Logo
     if (this.logo) {
       const sz = 280;
-      const lx = cx - sz / 2;
-      const ly = y0 - sz - 60;
       const inP = easeOutCubic(clamp01(p / 0.6));
       ctx.save();
       ctx.globalAlpha = e.alpha * inP;
-      ctx.drawImage(this.logo, lx, ly + (1 - inP) * 40, sz, sz);
+      ctx.drawImage(this.logo, cx - sz / 2, y0 - sz - 70 + (1 - inP) * 40, sz, sz);
       ctx.restore();
     }
 
-    // Okul adı
     const fit = fitFontSize(ctx, school, {
       maxWidth: tpl.title.maxWidth + 60,
       maxHeight: 260,
@@ -277,19 +339,15 @@ export class StudioRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     const lineH = fit.size * 1.24;
-    fit.lines.forEach((line, i) => {
-      ctx.fillText(line, cx, y0 + i * lineH);
-    });
+    fit.lines.forEach((line, i) => ctx.fillText(line, cx, y0 + i * lineH));
     y0 += fit.lines.length * lineH + 46;
 
-    // Vurgu çizgisi
     const drawP = easeOutCubic(clamp01((p - 0.15) / 0.5));
     const barW = 150 * drawP;
     ctx.fillStyle = tpl.accent;
     ctx.fillRect(cx - barW / 2, y0, barW, 8);
     y0 += 52;
 
-    // Alt etiket
     ctx.save();
     ctx.font = `600 24px ${tpl.capsLabel.font}, sans-serif`;
     ctx.fillStyle = tpl.muted;
@@ -313,17 +371,15 @@ export class StudioRenderer {
 
     ctx.save();
     ctx.globalAlpha = e.alpha;
-    ctx.translate(e.dx, e.dy + (e.scale !== 1 ? (1 - e.scale) * H / 2 : 0));
+    ctx.translate(e.dx, e.dy);
     if (e.scale !== 1) {
       ctx.translate(cx, H / 2);
       ctx.scale(e.scale, e.scale);
       ctx.translate(-cx, -H / 2);
     }
 
-    // üst etiket
     this.capsLabel(ctx, 'DUYURU', { x: centered ? cx : x, y: y - 90, align: centered ? 'center' : 'left', tpl, tracking: 5 });
 
-    // başlık
     const display = t.uppercase ? title.toLocaleUpperCase('tr-TR') : title;
     const fit = fitFontSize(ctx, display, {
       maxWidth: t.maxWidth,
@@ -349,7 +405,6 @@ export class StudioRenderer {
     ctx.globalAlpha = e.alpha;
     if (typeof ctx.letterSpacing === 'string') ctx.letterSpacing = '0px';
 
-    // vurgu
     const drawP = easeOutCubic(clamp01((p - 0.4) / 0.45));
     const barW = (centered ? 220 : 160) * drawP;
     ctx.fillStyle = tpl.accent;
@@ -359,66 +414,54 @@ export class StudioRenderer {
     ctx.restore();
   }
 
-  sceneDate(p, tpl, fields) {
+  /** DATE / TIME / LOCATION sahneleri için ortak yumuşak açılım */
+  sceneInfo(label, value, p, tpl) {
     const ctx = this.ctx;
-    const e = this.entrance(p, tpl.motion.enter, { enterDur: 0.8 });
-    const rows = [
-      fields.date && { label: 'TARİH', value: fields.date },
-      fields.time && { label: 'SAAT', value: fields.time },
-      fields.location && { label: 'YER', value: fields.location },
-    ].filter(Boolean);
-    if (!rows.length) return;
-
+    if (!value || !value.trim()) return;
+    const e = this.entrance(p, 'fade', { enterDur: 0.7 });
     const centered = tpl.title.align === 'center';
     const cx = W / 2;
-    const leftX = 170;
-    const totalH = rows.length * 210 - 30;
-    let y = (H - totalH) / 2 - 40;
+    const x = centered ? cx : 170;
 
     ctx.save();
     ctx.globalAlpha = e.alpha;
-    ctx.translate(e.dx, e.dy);
+    ctx.translate(e.dx, e.dy + (e.scale !== 1 ? (1 - e.scale) * H / 2 : 0));
+    if (e.scale !== 1) {
+      ctx.translate(cx, H / 2);
+      ctx.scale(e.scale, e.scale);
+      ctx.translate(-cx, -H / 2);
+    }
 
-    rows.forEach((row, i) => {
-      const rowP = clamp01((p - i * 0.16) / 0.55);
-      const a = easeOutCubic(rowP);
-      const ry = y + i * 210 + (1 - a) * 46;
-      const x = centered ? cx : leftX;
+    const cy = H / 2 - 60;
+    this.capsLabel(ctx, label, { x: centered ? cx : x, y: cy - 40, align: centered ? 'center' : 'left', tpl, tracking: 6 });
 
-      // ayraç
-      if (i > 0) {
-        ctx.strokeStyle = tpl.line;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        if (centered) {
-          ctx.moveTo(cx - 120, ry - 66);
-          ctx.lineTo(cx + 120, ry - 66);
-        } else {
-          ctx.moveTo(leftX, ry - 66);
-          ctx.lineTo(leftX + 640, ry - 66);
-        }
-        ctx.stroke();
-      }
-
-      ctx.save();
-      ctx.globalAlpha = e.alpha * a;
-      this.capsLabel(ctx, row.label, { x: centered ? cx : x, y: ry, align: centered ? 'center' : 'left', tpl, tracking: 5 });
-
-      const fit = fitFontSize(ctx, row.value, {
-        maxWidth: 820,
-        maxHeight: 130,
-        base: 66,
-        min: 34,
-        weight: 700,
-        font: tpl.title.font,
-      });
-      ctx.font = `700 ${fit.size}px ${tpl.title.font}, sans-serif`;
-      ctx.fillStyle = tpl.ink;
-      ctx.textAlign = centered ? 'center' : 'left';
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillText(fit.lines[0], x, ry + 96);
-      ctx.restore();
+    const fit = fitFontSize(ctx, value, {
+      maxWidth: 900,
+      maxHeight: 190,
+      base: 84,
+      min: 40,
+      weight: 700,
+      font: tpl.title.font,
     });
+    ctx.font = `700 ${fit.size}px ${tpl.title.font}, sans-serif`;
+    ctx.fillStyle = tpl.ink;
+    ctx.textAlign = centered ? 'center' : 'left';
+    ctx.textBaseline = 'alphabetic';
+    const lineH = fit.size * 1.15;
+    fit.lines.forEach((line, i) => {
+      const lineP = clamp01((p - i * 0.14) / 0.5);
+      ctx.globalAlpha = e.alpha * easeOutCubic(lineP);
+      ctx.translate(0, (1 - easeOutCubic(lineP)) * 26);
+      ctx.fillText(line, x, cy + 96 + i * lineH);
+      ctx.translate(0, -(1 - easeOutCubic(lineP)) * 26);
+    });
+
+    const drawP = easeOutCubic(clamp01((p - 0.35) / 0.4));
+    const barW = (centered ? 120 : 110) * drawP;
+    ctx.globalAlpha = e.alpha;
+    ctx.fillStyle = tpl.accent;
+    if (centered) ctx.fillRect(cx - barW / 2, cy + 96 + fit.lines.length * lineH + 34, barW, 8);
+    else ctx.fillRect(x, cy + 96 + fit.lines.length * lineH + 34, barW, 8);
 
     ctx.restore();
   }
@@ -453,7 +496,7 @@ export class StudioRenderer {
     ctx.globalAlpha = e.alpha;
     ctx.translate(e.dx, e.dy);
 
-    const reveal = clamp01(p * 1.08); // satırlar ses akışına göre belirir
+    const reveal = clamp01(p * 1.08);
     const count = fit.lines.length;
     ctx.font = `${tpl.body.weight} ${fit.size}px ${tpl.body.font}, sans-serif`;
     ctx.textAlign = centered ? 'center' : 'left';
@@ -461,8 +504,7 @@ export class StudioRenderer {
     ctx.fillStyle = tpl.ink;
 
     fit.lines.forEach((line, i) => {
-      const need = (i + 1) / count;
-      const lineP = clamp01((reveal - (i / count)) / (1 / count) * 1.05);
+      const lineP = clamp01(((reveal - i / count) / (1 / count)) * 1.05);
       if (lineP <= 0) return;
       const a = easeOutCubic(lineP);
       const dy = (1 - easeOutCubic(lineP)) * 28;
@@ -473,7 +515,6 @@ export class StudioRenderer {
       y += lh;
     });
 
-    // sol dikey ilerleme çizgisi (sadece soldan hizalı)
     if (!centered) {
       const drawP = easeOutCubic(clamp01((p - 0.1) / 0.85));
       ctx.strokeStyle = tpl.accent;
@@ -497,14 +538,13 @@ export class StudioRenderer {
 
     ctx.save();
     ctx.globalAlpha = e.alpha;
-    ctx.translate(e.dx, e.dy + (e.scale !== 1 ? (1 - e.scale) * H / 2 : 0));
+    ctx.translate(e.dx, e.dy);
     if (e.scale !== 1) {
       ctx.translate(cx, H / 2);
       ctx.scale(e.scale, e.scale);
       ctx.translate(-cx, -H / 2);
     }
 
-    // başlık
     const title = tpl.decor === 'warm' ? 'Görüşmek dileğiyle' : 'TEŞEKKÜRLER';
     const fit = fitFontSize(ctx, title, {
       maxWidth: 900,
@@ -527,7 +567,6 @@ export class StudioRenderer {
       ctx.translate(0, -(1 - easeOutCubic(lineP)) * 26);
     });
 
-    // imza
     ctx.save();
     ctx.globalAlpha = e.alpha * clamp01((p - 0.35) / 0.4);
     ctx.font = `500 44px ${tpl.body.font}, sans-serif`;
@@ -536,7 +575,6 @@ export class StudioRenderer {
     ctx.fillText(sign, cx, H / 2 + 60);
     ctx.restore();
 
-    // okul adı (altta)
     if (school) {
       ctx.save();
       ctx.globalAlpha = e.alpha * clamp01((p - 0.5) / 0.35);

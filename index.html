@@ -27,7 +27,7 @@
 
     <!-- SOL: Duyuru + Tasarım -->
     <section class="panel">
-      <div class="panel-head"><h2>Duyuru</h2><span class="panel-note">1 / 3</span></div>
+      <div class="panel-head"><h2>Duyuru</h2><span class="panel-note"><button type="button" class="mini-link" id="clearBtn" title="Tüm metni ve sesi temizle">Temizle</button></span></div>
       <div class="chips" id="msgTemplates"></div>
       <div class="field"><label for="school">Okul</label><input type="text" id="school" maxlength="80" autocomplete="off" placeholder="Okul adı"></div>
       <div class="field"><label for="title">Başlık</label><input type="text" id="title" maxlength="120" autocomplete="off" placeholder="VELİ TOPLANTISI"></div>
@@ -77,16 +77,17 @@
 
     <!-- SAĞ: Seslendirme -->
     <section class="panel">
-      <div class="panel-head"><h2>Seslendirme</h2><span class="panel-note">Ses</span></div>
+      <div class="panel-head"><h2>Seslendirme Stüdyosu</h2><span class="panel-note">Ses</span></div>
       <div class="tabs" id="voiceTabs" role="tablist">
         <button type="button" class="tab active" data-tab="ai" role="tab">Yapay Ses</button>
-        <button type="button" class="tab" data-tab="record" role="tab">Kayıt</button>
-        <button type="button" class="tab" data-tab="file" role="tab">Dosya</button>
+        <button type="button" class="tab" data-tab="record" role="tab">Ses Kaydı</button>
+        <button type="button" class="tab" data-tab="file" role="tab">Ses Dosyası</button>
       </div>
 
       <div class="tab-body" data-tabbody="ai" role="tabpanel">
-        <p class="hint">İki doğal Türkçe ses. Önce örneği dinleyin, sonra <b>Bu sesle oluştur</b> deyin. İlk kullanımda ses modeli bir kez indirilir (~60 MB) ve tarayıcıda kalır; metin cihazdan çıkmaz.</p>
-        <div class="voice-cards" id="voiceCards"></div>
+        <p class="hint">Sesler sunucudaki gerçek TTS motorlarından gelir. Önce örneği dinleyin, sonra <b>Bu Sesle Oluştur</b> deyin. Sunucu bağlı değilse aşağıda nasıl başlatılacağı anlatılır.</p>
+        <div id="voiceGallery"></div>
+        <div id="ttsSetup" class="tts-setup hidden"></div>
         <div class="tts-status" id="ttsStatus"></div>
       </div>
 
@@ -186,6 +187,16 @@
           <input type="file" id="sLogoInput" accept="image/png,image/jpeg,image/webp" hidden>
         </div>
         <span class="hint-sub">PNG/JPG, en fazla 300 KB. Videonun giriş sahnesinde görünür.</span>
+      </div>
+      <div class="field tts-settings">
+        <label for="sTtsUrl">TTS sunucusu (isteğe bağlı)</label>
+        <input type="text" id="sTtsUrl" placeholder="http://127.0.0.1:8765" autocomplete="off">
+        <label class="chk-inline"><input type="checkbox" id="sTtsAuto" checked> Otomatik bul (127.0.0.1:8765)</label>
+        <div class="tts-test-row">
+          <button type="button" class="btn btn-sm ghost" id="sTtsTest">Bağlantıyı test et</button>
+          <span class="tts-test-result" id="sTtsResult"></span>
+        </div>
+        <span class="hint-sub">Yapay sesler bu sunucu üzerinden üretilir: <code>pip install -r server/requirements.txt</code> → <code>python server/server.py</code></span>
       </div>
       <div class="settings-actions">
         <button type="button" class="btn primary" id="sSave">Kaydet</button>

@@ -1,154 +1,103 @@
-/* Seslendirme sağlayıcıları
+/* Seslendirme sağlayıcıları (frontend tarafı)
  *
- * TTSProvider arayüzü:
- *   generate(text, voiceId, onProgress) -> { blob, duration, url }
+ * TTS üretimi artık TARAYICIDA YAPILMAZ. Metin, yerel/uzak Python servisine
+ * gönderilir (server/server.py) ve WAV olarak geri döner. Böylece:
+ *   - 46 MB'lık tarayıcı TTS motoru (piper-tts-web) hiç indirilmez
+ *   - ses modeli tarayıcıya inmez; sunucu makinesinde kalır
+ *   - provider mimarisi sunucuda (edge / piper / windows) işler
  *
- *  - PiperProvider   : piper-tts-web (WASM, tarayıcıda yerel çalışır, WAV üretir)
- *  - BrowserSpeechProvider : Web Speech API (yalnızca önizleme, dışa aktarılamaz)
+ * Frontend sağlayıcıları:
+ *   BackendTTSProvider   — sunucudan ses listesi + üretim
+ *   BrowserSpeechProvider— yalnızca "hızlı örnek dinleme" için (dışa aktarılamaz)
  */
 
-import { fetchWithProgress } from './utils.js';
+export const TTS_SAMPLE_TEXT =
+  'Merhaba! Bu, veli mesajınızda kullanabileceğiniz örnek bir seslendirmedir.';
 
-export const AI_VOICES = [
-  {
-    id: 'tr_TR-dfki-medium',
-    label: 'Elif',
-    gender: 'Kadın',
-    tag: 'Doğal · Kadın · Türkçe',
-    desc: 'Yumuşak ve net bir okuma; veli mesajlarına uygun.',
-    sizeMB: 63,
-  },
-  {
-    id: 'tr_TR-fahrettin-medium',
-    label: 'Murat',
-    gender: 'Erkek',
-    tag: 'Profesyonel · Erkek · Türkçe',
-    desc: 'Duyurulara uygun, tok ve güvenilir bir ses.',
-    sizeMB: 63,
-  },
-];
+export const TTS_AUTO_URL = 'http://127.0.0.1:8765';
 
-const BUNDLE_BASES = [
-  'https://raw.githubusercontent.com/Poket-Jony/piper-tts-web/v1.1.2/dist/',
-  'https://raw.githubusercontent.com/Poket-Jony/piper-tts-web/main/dist/',
-];
-
-const MODEL_BASE = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/';
-
-function modelPathFor(voiceId) {
-  const p = voiceId.split('-');
-  return `${p[0].split('_')[0]}/${p.join('/')}/${p.join('-')}`;
-}
-
-/** Ses modelini HuggingFace'ten ilerleme bildirimiyle indirir */
-class HFVoiceProvider {
-  constructor(onProgress) {
-    this.onProgress = onProgress;
-    this.cache = new Map();
-  }
-  async fetch(voiceId) {
-    if (this.cache.has(voiceId)) return this.cache.get(voiceId);
-    const base = MODEL_BASE + modelPathFor(voiceId);
-    const cfgRes = await fetch(base + '.onnx.json');
-    if (!cfgRes.ok) throw new Error('Ses yapılandırması indirilemedi.');
-    const cfg = await cfgRes.json();
-    const modelBlob = await fetchWithProgress(base + '.onnx', (p) => this.onProgress && this.onProgress(p));
-    const url = URL.createObjectURL(modelBlob);
-    const result = [cfg, url];
-    this.cache.set(voiceId, result);
-    return result;
-  }
-  destroy() {
-    this.cache.forEach(([, url]) => URL.revokeObjectURL(url));
-    this.cache.clear();
-  }
-}
-
-export class PiperProvider {
+export class BackendTTSProvider {
   constructor() {
-    this.bundle = null;
-    this.base = null;
-    this.engine = null;
-    this.voiceProvider = null;
-    this._loading = null;
-  }
-
-  async loadBundle() {
-    if (this.bundle) return this.bundle;
-    if (this._loading) return this._loading;
-    this._loading = (async () => {
-      let lastErr = null;
-      for (const base of BUNDLE_BASES) {
-        try {
-          const mod = await import(base + 'piper-tts-web.js');
-          if (!mod.PiperWebWorkerEngine || !mod.OnnxWebWorkerRuntime || !mod.PhonemizeWebWorkerRuntime) {
-            throw new Error('Kütüphane sürümü uyumsuz');
-          }
-          this.bundle = mod;
-          this.base = base;
-          return mod;
-        } catch (err) {
-          lastErr = err;
-        }
-      }
-      throw new Error('Seslendirme motoru indirilemedi (' + (lastErr && lastErr.message ? lastErr.message : 'ağ hatası') + ').');
-    })();
-    return this._loading;
-  }
-
-  async getEngine(onStatus) {
-    const mod = await this.loadBundle();
-    if (this.engine) return this.engine;
-    onStatus && onStatus('Seslendirme motoru hazırlanıyor…');
-    this.voiceProvider = new HFVoiceProvider();
-    const stub = { destroy() {} };
-    this.engine = new mod.PiperWebWorkerEngine({
-      onnxRuntime: new mod.OnnxWebWorkerRuntime({
-        basePath: this.base + 'onnx/',
-        numThreads: 1,
-      }),
-      phonemizeRuntime: new mod.PhonemizeWebWorkerRuntime({
-        basePath: this.base + 'piper/',
-      }),
-      expressionRuntime: stub,
-      voiceProvider: this.voiceProvider,
-    });
-    return this.engine;
+    this.baseUrl = null;
+    this.status = 'idle'; // idle | probing | ok | failed
+    this.error = null;
+    this.lastVoices = [];
   }
 
   /**
-   * @param {string} text
-   * @param {string} voiceId AI_VOICES id'si
-   * @param {(p:number)=>void} onProgress model indirme ilerlemesi
-   * @param {(msg:string)=>void} onStatus
+   * Sunucuyu bulur: önce Ayarlar'daki URL, sonra varsayılan 127.0.0.1:8765,
+   * son olarak da aynı köken (siteyi sunucu servis ediyorsa).
    */
-  async generate(text, voiceId, onProgress, onStatus) {
-    const engine = await this.getEngine(onStatus);
-    onStatus && onStatus('Ses modeli indiriliyor…');
-    this.voiceProvider.onProgress = onProgress;
-    onStatus && onStatus('Ses oluşturuluyor…');
-    const response = await engine.generate(text, voiceId, 0);
-    return {
-      blob: response.file,
-      duration: response.duration / 1000,
-      url: URL.createObjectURL(response.file),
-      sampleRate: 22050,
-    };
+  async discover({ ttsUrl = '', ttsAuto = true } = {}) {
+    this.status = 'probing';
+    this.error = null;
+    const candidates = [];
+    if (ttsUrl && ttsUrl.trim()) candidates.push(ttsUrl.trim().replace(/\/+$/, ''));
+    if (ttsAuto) candidates.push(TTS_AUTO_URL);
+    if (typeof location !== 'undefined' && location.protocol.startsWith('http')) candidates.push(location.origin);
+
+    const seen = new Set();
+    for (const url of candidates) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      try {
+        const res = await fetch(url + '/api/tts/voices', {
+          signal: AbortSignal.timeout(1800),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          this.baseUrl = url;
+          this.lastVoices = Array.isArray(data.voices) ? data.voices : [];
+          this.status = 'ok';
+          return true;
+        }
+      } catch {
+        /* sonraki aday */
+      }
+    }
+    this.status = 'failed';
+    this.baseUrl = null;
+    this.lastVoices = [];
+    this.error = 'TTS sunucusuna ulaşılamadı.';
+    return false;
   }
 
-  destroy() {
-    try {
-      if (this.engine) this.engine.destroy();
-    } catch { /* yok say */ }
-    this.engine = null;
-    if (this.voiceProvider) {
-      this.voiceProvider.destroy();
-      this.voiceProvider = null;
+  async getVoices() {
+    if (!this.baseUrl) return [];
+    const res = await fetch(this.baseUrl + '/api/tts/voices');
+    if (!res.ok) throw new Error('Ses listesi alınamadı');
+    const data = await res.json();
+    this.lastVoices = Array.isArray(data.voices) ? data.voices : [];
+    return this.lastVoices;
+  }
+
+  /**
+   * @returns {Promise<{blob:Blob, duration:number|null, provider:string}>}
+   */
+  async generate(text, voiceId, onProgress) {
+    if (!this.baseUrl) throw new Error('TTS sunucusu bağlı değil.');
+    onProgress && onProgress(0.15);
+    const res = await fetch(this.baseUrl + '/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice: voiceId }),
+    });
+    if (!res.ok) {
+      let msg = `TTS hatası (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err && err.error) msg = err.error;
+      } catch { /* yok say */ }
+      throw new Error(msg);
     }
+    const blob = await res.blob();
+    onProgress && onProgress(1);
+    const duration = parseFloat(res.headers.get('X-Duration')) || null;
+    return { blob, duration, provider: res.headers.get('X-Provider') || 'backend' };
   }
 }
 
-/** Hızlı "örnek dinle" ve Piper yüklenemezse yedek olarak Web Speech API */
+/** Hızlı "örnek dinle" ve sunucu yokken yedek olarak Web Speech API */
 export class BrowserSpeechProvider {
   static supported() {
     return typeof window !== 'undefined' && 'speechSynthesis' in window && !!window.speechSynthesis;
@@ -173,3 +122,10 @@ export class BrowserSpeechProvider {
     if (BrowserSpeechProvider.supported()) speechSynthesis.cancel();
   }
 }
+
+/** Provider bilgisi için kısa etiket (görsel rozetler) */
+export const PROVIDER_META = {
+  edge: { badge: 'Edge-TTS', note: 'İnternet gerekir', cls: 'edge' },
+  piper: { badge: 'Piper', note: 'Çevrimdışı · Yerel', cls: 'piper' },
+  windows: { badge: 'Windows', note: 'Sistem sesi', cls: 'windows' },
+};
