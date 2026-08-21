@@ -1,0 +1,14 @@
+{
+  "name": "veli-mesaji-studio",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Veli Mesajı Studio — metni sesli, hareketli ve paylaşılabilir 9:16 videoya dönüştürür.",
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "serve": "python -m http.server 8000"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}

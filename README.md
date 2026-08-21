@@ -1,64 +1,110 @@
-# 💌 Veli Mesajı — Görsel + Ses + Hareket
+# 🎬 Veli Mesajı Studio
 
-Velilere iletilecek bir mesajı **tek dosyada** hazırlayan web uygulaması.
+**Metninizi profesyonel, sesli ve hareketli bir 9:16 videoya dönüştürün.**
 
-**Neden böyle bir araç?**
 > Yazı okunmayabiliyor, ses dinleniyor. İkisi birlikte gönderilince ulaşma artıyor.
 
-Bu araç metni (görsel), ses kaydını (ses) ve animasyonları (hareket) tek bir kartta
-birleştirir. Çıktı, WhatsApp/Telegram üzerinden velilere gönderilebilen tek bir
-HTML dosyasıdır.
+Veli Mesajı Studio, velilere gönderilecek bir duyuruyu **tek tıkla 1080×1920 MP4
+videoya** çevirir: metin (görsel) + seslendirme (ses) + animasyonlar (hareket).
+Çıktı WhatsApp/Telegram/e-posta ile doğrudan paylaşılabilir.
+
+**Canlı:** https://alpampa.github.io/veli-mesaji/
+
+---
+
+## Akış
+
+```
+Metni yaz → sesi seç → tasarımı seç → önizlemede izle
+     → timeline'da sahneleri gör → VİDEOYU ÜRET → MP4 → Paylaş
+```
 
 ## Özellikler
 
-- **Görsel**: Okul adı, başlık, mesaj metni ve imza; animasyonlu, degrade kart üzerinde canlı önizleme
-- **Ses**:
-  - Mikrofonla kayıt (tarayıcıda, izin gerektirir) — **40 saniyenin altında** hedefli zamanlayıcı
-  - MP3 / WAV / M4A / OGG dosyası yükleme
-  - Kayıt yoksa bile "Sesli dinle" ile tarayıcı metni Türkçe okur (Speech Synthesis)
-- **Hareket**: Değişen degrade arka plan, süzülen ışık lekeleri, harf harf başlık animasyonu, nabız atan oynat düğmesi, ses ekolayzeri
-- **Kontrol listesi**: Ses 40 sn altında mı? Metin ve ses aynı bilgiyi veriyor mu? Tarih/iletişim bilgisi var mı?
-- **Paylaşım**:
-  - 📄 Tek HTML dosyası indir (görsel + ses gömülü + hareket) — açan herkes çalıştırır, internete gerek yok
-  - 🔗 Metin bağlantısı kopyala (sadece metni taşır; ses ayrı gönderilir)
-- **Hazır şablonlar**: Toplantı hatırlatması, ödev bilgilendirmesi, okul gezisi, genel duyuru
+### Sahne tabanlı video motoru
+- Sahneler: `INTRO → TITLE → DATE → MESSAGE → OUTRO`
+- Sahne süreleri **ses süresine göre otomatik dağıtılır** (`audio ≈ video`)
+- 5 tasarım şablonu: **Sade · Okul · Etkinlik · Sıcak · Acil**
+  (her biri kendi renk sistemi, tipografi, yerleşim ve animasyon diliyle)
+- Animasyonlar: fade, slide-up/left, scale, satır satır metin açılımı, vurgu çizgisi çizimi, logo girişi — hepsi yumuşak ve profesyonel
+- Önizleme ve MP4 çıktısı **aynı render motorunu** kullanır (WYSIWYG)
 
-## Kullanım
+### Seslendirme (sağ panel — 3 yol)
+1. **Yapay Ses** — 2 doğal Türkçe ses:
+   - **Elif** (♀) — `tr_TR-dfki-medium` (Piper, WASM)
+   - **Murat** (♂) — `tr_TR-fahrettin-medium`
+   - Piper tarayıcıda **yerel** çalışır: metin cihazdan çıkmaz, anahtar gerekmez
+   - İlk kullanımda ses modeli bir kez indirilir (~60 MB), sonra tarayıcıda kalır
+   - Hızlı "Örnek Dinle" için Web Speech API yedeği
+2. **Kayıt** — mikrofonla kendi sesiniz (40 sn hedefli zamanlayıcı)
+3. **Dosya** — MP3 / WAV / M4A / OGG yükleme
 
-1. Sayfayı açın (canlı: https://alpampa.github.io/veli-mesaji/)
-2. Hazır şablondan başlayın ya da mesajı kendiniz yazın
-3. Sesi kaydedin (≤ 40 sn) veya ses dosyası yükleyin
-4. Kontrol listesini gözden geçirin
-5. **"İndir"** düğmesiyle tek HTML dosyası alın ve velilere gönderin
+TTS mimarisi **provider tabanlıdır** (`js/tts.js`): `PiperProvider` ve
+`BrowserSpeechProvider`; ileride yeni motorlar eklenebilir.
+
+### Timeline + waveform
+- Ses süresine ölçekli **dalga formu**
+- Sahne segmentleri + oynatma kafası + zaman cetveli
+- Sahneye tıklayın → önizleme oraya atlar
+
+### 40 saniye kuralı (hard limit)
+- Yazarken canlı tahmin: `72 kelime ≈ 27 sn`
+- Ses üretilince gerçek süre: `00:28.4`
+- 40 sn aşılınca üretim **engellenir** ve düşündürücü bir uyarı gösterilir
+
+### Dışa aktarma
+- **1080×1920 · 9:16 · H.264 + AAC · MP4**
+- Chrome/Edge/Safari: `MediaRecorder` ile doğrudan MP4
+- Firefox: webm → **FFmpeg (WASM)** ile MP4'e dönüştürme
+- Aşamalı render ekranı (kontrol → ses → süre → sahneler → render)
+- Sonuç: oynat, indir, WhatsApp (Web Share API, yoksa yönlendirme), e-posta
+
+### Diğer
+- Canlı önizleme: metin değişince video anında güncellenir
+- Okul kimliği ayarları (ad, telefon, adres, logo) — tarayıcıda saklanır
+- Taslak otomatik kaydı + geri yükleme
+- Duyuru şablonları: toplantı, ödev, gezi, duyuru
+- Üretim öncesi hazırlık listesi (ses ≤ 40 sn, metin↔ses onayı, iletişim bilgisi)
+- Boş durum, hata tasarımı, mikro etkileşimler
 
 ## Yerel çalıştırma
 
-Build gerektirmez; dosyaları doğrudan açabilirsiniz:
-
 ```sh
-# veya basit bir sunucu ile:
-python -m http.server 8000
-# http://localhost:8000
+npm install        # yalnızca geliştirme testleri için (jsdom)
+npm test           # birim + DOM testleri
+npm run serve      # python -m http.server 8000 → http://localhost:8000
 ```
 
-Mikrofon kaydı `file://` altında da çalışır, ama güvenli bağlam
-(https veya localhost) her tarayıcıda önerilir.
+Mikrofon ve video kaydı **güvenli bağlam** ister (https veya localhost).
 
-## Teknik
+## Mimari
 
-- Saf HTML + CSS + JavaScript (bağımlılık yok)
-- Kayıt: `MediaRecorder` (tarayıcıya göre m4a/webm/ogg)
-- Dışa aktarma: Ses `base64` olarak tek HTML dosyasının içine gömülür
-- Yedek seslendirme: Web Speech API (`tr-TR`)
+```
+index.html            arayüz (Content | Preview+Timeline | Voice)
+styles.css            tasarım sistemi (token'lar + mikro etkileşimler)
+js/main.js            durum, panel bağlama, üretim akışı, taslak
+js/renderer.js        StudioRenderer — 1080×1920 sahne çizim motoru
+js/scenes.js          sahne dağıtımı (ses süresine göre)
+js/audio.js           AudioEngine — decode, oynatma, arama, tepe noktaları
+js/tts.js             TTSProvider'lar (Piper WASM + Web Speech)
+js/exporter.js        doğrulama + MediaRecorder MP4 + FFmpeg yedek
+js/templates.js       video tasarım + duyuru şablonları
+js/utils.js           yardımcılar
+tests/run.mjs         testler (npm test)
+```
 
-## Dosyalar
+### Dış kaynaklar (çalışma zamanında yüklenir)
+- TTS motoru: `piper-tts-web` v1.1.2 (raw.githubusercontent, sabit sürüm)
+- Ses modelleri: `rhasspy/piper-voices` v1.0.0 (HuggingFace, CORS açık)
+- FFmpeg (yalnızca Firefox yolu): `@ffmpeg/ffmpeg` + `@ffmpeg/core` (unpkg)
+- Yazı tipleri: Space Grotesk + Inter (Google Fonts, `latin-ext`)
 
-| Dosya | Açıklama |
-| --- | --- |
-| `index.html` | Arayüz (düzenleyici + canlı önizleme) |
-| `styles.css` | Tasarım ve tüm animasyonlar |
-| `app.js` | Kayıt, yükleme, önizleme, dışa aktarma mantığı |
+## Testler
+
+`npm test` şunları doğrular: sahne dağılımı matematiği, 40 sn hard limit ve
+doğrulama mantığı, tasarım şablon bütünlüğü, DOM arayüz başlatma (jsdom),
+render motorunun tüm şablon/sahne/zaman noktalarında hatasız çizimi.
 
 ## Lisans
 
-İzinsiz kullanım, kopyalama ve paylaşım serbesttir. ❤️
+Serbest kullanım. ❤️

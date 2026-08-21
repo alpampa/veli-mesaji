@@ -3,171 +3,200 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Velilere görsel + ses + hareket ile mesaj hazırlama aracı. Yazı okunmayabilir, ses dinlenir; ikisi birlikte gönderilince ulaşma artar.">
-  <title>Veli Mesajı — Görsel + Ses + Hareket</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💌</text></svg>">
+  <meta name="description" content="Veli Mesajı Studio — metninizi profesyonel, sesli ve hareketli bir 9:16 videoya dönüştürün. 40 saniyenin altında, WhatsApp uyumlu MP4.">
+  <title>Veli Mesajı Studio — Sesli, hareketli, paylaşılabilir video</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23191612'/><text x='50' y='68' font-size='52' text-anchor='middle'>🎬</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
   <header class="topbar">
-    <div class="container topbar-inner">
-      <div class="logo">💌 Veli Mesajı</div>
-      <div class="tagline">Görsel + Ses + Hareket — birlikte gönderilince ulaşma artar</div>
+    <div class="container topbar-in">
+      <div class="brand"><span class="brand-mark">🎬</span><span class="brand-name">Veli Mesajı <b>Studio</b></span></div>
+      <div class="top-actions">
+        <button type="button" class="chip" id="draftBtn" title="Taslak otomatik kaydedilir; tıklayınca yükler"><span class="chip-ic">⤓</span> Taslak <span class="draft-state" id="draftState"></span></button>
+        <button type="button" class="chip" id="settingsBtn" title="Okul kimliği ayarları"><span class="chip-ic">⚙</span> Ayarlar</button>
+      </div>
     </div>
   </header>
 
-  <main class="container">
+  <main class="container studio">
 
-    <section class="intro card">
-      <h1>Veli mesajınızı hazırlayın</h1>
-      <p>
-        Yazı okunmayabilir, <strong>ses dinlenir</strong>. Metni yazın, sesi ekleyin,
-        ikisi birlikte gitsin. <em>Sesi 40 saniyenin altında tutun.</em>
-      </p>
-      <ol class="steps">
-        <li><span>1</span> Metni yaz</li>
-        <li><span>2</span> Sesi ekle (kaydet veya yükle)</li>
-        <li><span>3</span> İkisi aynı bilgiyi mi veriyor? Kontrol et</li>
-        <li><span>4</span> İndir ve velilere gönder</li>
-      </ol>
+    <!-- SOL: Duyuru + Tasarım -->
+    <section class="panel">
+      <div class="panel-head"><h2>Duyuru</h2><span class="panel-note">1 / 3</span></div>
+      <div class="chips" id="msgTemplates"></div>
+      <div class="field"><label for="school">Okul</label><input type="text" id="school" maxlength="80" autocomplete="off" placeholder="Okul adı"></div>
+      <div class="field"><label for="title">Başlık</label><input type="text" id="title" maxlength="120" autocomplete="off" placeholder="VELİ TOPLANTISI"></div>
+      <div class="row2">
+        <div class="field"><label for="date">Tarih</label><input type="text" id="date" maxlength="40" autocomplete="off" placeholder="25 EYLÜL"></div>
+        <div class="field"><label for="time">Saat</label><input type="text" id="time" maxlength="20" autocomplete="off" placeholder="14:30"></div>
+      </div>
+      <div class="field"><label for="location">Yer</label><input type="text" id="location" maxlength="60" autocomplete="off" placeholder="Konferans Salonu"></div>
+      <div class="field"><label for="body">Mesaj <span class="est" id="msgEstimate"></span></label><textarea id="body" rows="6" maxlength="1500" placeholder="Velilere iletmek istediğiniz bilgiyi kısa ve net yazın. Seslendirme bu metni okur."></textarea></div>
+      <div class="field"><label for="sign">İmza</label><input type="text" id="sign" maxlength="80" autocomplete="off" placeholder="Sınıf Öğretmeni Ayşe Yılmaz"></div>
+
+      <div class="panel-head head-mt"><h2>Tasarım</h2><span class="panel-note">2 / 3</span></div>
+      <div class="template-grid" id="templateGrid"></div>
+
+      <div class="panel-head head-mt"><h2>Üretime hazırlık</h2><span class="panel-note">3 / 3</span></div>
+      <ul class="readiness" id="readiness"></ul>
     </section>
 
-    <div class="grid">
-
-      <!-- ============ DÜZENLEYİCİ ============ -->
-      <section class="editor">
-        <div class="card">
-          <h2>1 · Mesaj metni</h2>
-
-          <div class="templates">
-            <span class="tmpl-label">Hazır şablonlar:</span>
-            <div class="tmpl-btns" id="templateButtons"></div>
-          </div>
-
-          <label for="school">Okul adı <span class="opt">(isteğe bağlı)</span></label>
-          <input type="text" id="school" placeholder="Örn. Atatürk İlkokulu" maxlength="80">
-
-          <label for="title">Başlık</label>
-          <input type="text" id="title" placeholder="Değerli Velilerimiz" maxlength="120">
-
-          <label for="body">Mesaj <span class="count" id="bodyCount"></span></label>
-          <textarea id="body" rows="7" placeholder="Velilere iletmek istediğiniz bilgiyi kısa ve net yazın. Ses kaydıyla aynı bilgiyi versin." maxlength="2000"></textarea>
-
-          <label for="sign">İmza / gönderen</label>
-          <input type="text" id="sign" placeholder="Örn. Sınıf Öğretmeni Ayşe Yılmaz" maxlength="80">
+    <!-- ORTA: Preview + Timeline -->
+    <section class="panel stage-panel">
+      <div class="stage-head">
+        <span class="stage-label">Önizleme</span>
+        <span class="stage-meta">1080 × 1920 · 9:16 · H.264 MP4</span>
+        <span class="live-badge"><span class="live-dot"></span>CANLI</span>
+      </div>
+      <div class="stage">
+        <canvas id="stage" width="1080" height="1920"></canvas>
+        <div class="stage-empty" id="stageEmpty">
+          <div class="empty-glyph">🎬</div>
+          <h3>Videonuzu burada görün</h3>
+          <p>Sol panelden duyurunuzu yazın,<br>sağ panelden bir ses seçin.</p>
         </div>
+      </div>
+      <div class="transport">
+        <button type="button" class="t-play" id="playBtn" title="Oynat / duraklat (boşluk)">
+          <svg class="t-ic-play" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="t-ic-pause" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+        </button>
+        <div class="t-time"><span id="tCur">0:00</span><span class="t-sep">/</span><span id="tDur">0:00</span></div>
+        <div class="t-note" id="tNote">Ses ekleyince gerçek süre görünür</div>
+      </div>
+      <div class="timeline-wrap">
+        <canvas id="timeline"></canvas>
+        <div class="tl-hint">Sahneye tıklayın → önizleme oraya gider</div>
+      </div>
+    </section>
 
-        <div class="card">
-          <h2>2 · Ses</h2>
-          <p class="hint">Kaydınızı <strong>40 saniyenin altında</strong> tutun. Ses yoksa bile mesaj "Sesli dinle" ile tarayıcıda okunur, ama gerçek ses kaydı her zaman daha etkilidir.</p>
+    <!-- SAĞ: Seslendirme -->
+    <section class="panel">
+      <div class="panel-head"><h2>Seslendirme</h2><span class="panel-note">Ses</span></div>
+      <div class="tabs" id="voiceTabs" role="tablist">
+        <button type="button" class="tab active" data-tab="ai" role="tab">Yapay Ses</button>
+        <button type="button" class="tab" data-tab="record" role="tab">Kayıt</button>
+        <button type="button" class="tab" data-tab="file" role="tab">Dosya</button>
+      </div>
 
-          <div class="rec-row">
-            <button id="recordBtn" class="rec-btn" title="Mikrofonla kaydet" type="button">
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
-            </button>
-            <div class="rec-info">
-              <div class="rec-label" id="recLabel">Kayıt başlat</div>
-              <div class="timer-bar"><div class="timer-fill" id="recBar"></div></div>
-              <div class="rec-meta"><span id="recTimer">00:00</span> <span id="recHint"></span></div>
-            </div>
-            <button id="stopBtn" class="btn danger hidden" type="button">⏹ Durdur</button>
+      <div class="tab-body" data-tabbody="ai" role="tabpanel">
+        <p class="hint">İki doğal Türkçe ses. Önce örneği dinleyin, sonra <b>Bu sesle oluştur</b> deyin. İlk kullanımda ses modeli bir kez indirilir (~60 MB) ve tarayıcıda kalır; metin cihazdan çıkmaz.</p>
+        <div class="voice-cards" id="voiceCards"></div>
+        <div class="tts-status" id="ttsStatus"></div>
+      </div>
+
+      <div class="tab-body hidden" data-tabbody="record" role="tabpanel">
+        <p class="hint">Kendi sesinizle kaydedin. Kaydı <b>40 saniyenin altında</b> tutun.</p>
+        <div class="rec-row">
+          <button type="button" id="recBtn" class="rec-btn" title="Mikrofonla kaydet">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+          </button>
+          <div class="rec-info">
+            <div class="rec-label" id="recLabel">Kayıt başlat</div>
+            <div class="rec-bar"><div class="rec-fill" id="recFill"></div></div>
+            <div class="rec-meta"><span id="recTime">00:00</span><span id="recHint">Hedef: 40 sn altı</span></div>
           </div>
-
-          <div class="upload-row">
-            <label class="btn ghost" for="fileInput">📁 Ses dosyası yükle</label>
-            <input type="file" id="fileInput" accept="audio/*" hidden>
-            <span class="upload-note">MP3, WAV, M4A, OGG… (en fazla 25 MB)</span>
-          </div>
-
-          <div id="audioChip" class="audio-chip hidden">
-            <span class="chip-icon">🎙️</span>
-            <span class="chip-name" id="chipName"></span>
-            <span class="chip-dur" id="chipDur"></span>
-            <button type="button" id="chipPlay" class="chip-btn">▶ Dinle</button>
-            <button type="button" id="chipRemove" class="chip-btn danger" title="Sesi kaldır">✕</button>
-          </div>
-          <div id="recErr" class="rec-err hidden"></div>
+          <button type="button" id="recStop" class="btn btn-sm danger hidden">Durdur</button>
         </div>
+        <div class="rec-err hidden" id="recErr"></div>
+      </div>
 
-        <div class="card">
-          <h2>3 · Kontrol listesi</h2>
-          <ul class="checklist" id="checklist">
-            <li data-item="duration"><span class="chk-mark">…</span><span class="chk-text">Ses 40 saniyenin altında</span></li>
-            <li data-item="same">
-              <span class="chk-mark" id="sameMark">…</span>
-              <label class="chk-inline">
-                <input type="checkbox" id="sameCheck"> Metindeki bilgiler ses kaydıyla aynı — dinleyip kontrol ettim
-              </label>
-            </li>
-            <li data-item="contact"><span class="chk-mark" id="contactMark">…</span><span class="chk-text">Mesajda tarih, saat veya iletişim bilgisi var</span></li>
-          </ul>
+      <div class="tab-body hidden" data-tabbody="file" role="tabpanel">
+        <p class="hint">MP3, WAV, M4A veya OGG yükleyin (en fazla 25 MB, 40 sn altı önerilir).</p>
+        <div class="drop" id="dropZone" tabindex="0">
+          <input type="file" id="fileInput" accept="audio/*" hidden>
+          <span class="drop-ic">⬆</span>
+          <span class="drop-text">Ses dosyası seçin<br>veya buraya sürükleyin</span>
         </div>
+      </div>
 
-        <div class="card">
-          <h2>4 · Paylaş</h2>
-          <p class="hint">İki düğme de aynı bilgiyi içerir: görsel kart + ses. İndirdiğiniz dosyayı WhatsApp, Telegram vb. üzerinden velilere gönderin.</p>
-          <div class="share-row">
-            <button id="exportBtn" class="btn primary" type="button">📄 İndir — Tek HTML dosyası (görsel + ses + hareket)</button>
-            <button id="linkBtn" class="btn ghost" type="button">🔗 Metin bağlantısı kopyala</button>
-            <button id="clearBtn" class="btn ghost subtle" type="button">🗑 Temizle</button>
-          </div>
-          <p class="hint" id="exportNote"></p>
-        </div>
-      </section>
-
-      <!-- ============ ÖNİZLEME ============ -->
-      <aside class="preview">
-        <div class="card sticky">
-          <h2>Canlı önizleme</h2>
-          <div class="preview-wrap">
-            <div class="preview-card" id="previewCard">
-              <div class="blob blob-a"></div>
-              <div class="blob blob-b"></div>
-              <div class="blob blob-c"></div>
-              <div class="pc-inner">
-                <div class="pc-school" id="prevSchool"></div>
-                <h3 class="pc-title" id="prevTitle"></h3>
-                <div class="pc-body" id="prevBody"></div>
-
-                <div class="audio-card" id="audioCard">
-                  <div class="eq" id="eq" aria-hidden="true">
-                    <span></span><span></span><span></span><span></span><span></span>
-                  </div>
-                  <button type="button" class="play-btn" id="playBtn" title="Oynat / duraklat">
-                    <svg class="ic-play" viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-                    <svg class="ic-pause" viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
-                  </button>
-                  <div class="audio-meta">
-                    <div class="audio-name" id="audioName">Sesli mesaj</div>
-                    <input type="range" id="seek" class="seek" min="0" max="1000" value="0" step="1">
-                    <div class="audio-time"><span id="timeCur">0:00</span> / <span id="timeDur">0:00</span></div>
-                  </div>
-                </div>
-
-                <div class="tts-row">
-                  <button type="button" class="btn light" id="ttsBtn">🔊 Sesli dinle (metni okur)</button>
-                </div>
-                <div class="no-audio-note" id="noAudioNote">Ses eklenmedi — kart yalnızca görsel + otomatik okuma ile gönderilir.</div>
-
-                <div class="pc-sign" id="prevSign"></div>
-              </div>
-            </div>
+      <div class="voice-summary hidden" id="voiceSummary">
+        <div class="vs-top">
+          <span class="vs-kind" id="vsKind">🎙</span>
+          <div class="vs-meta">
+            <div class="vs-name" id="vsName"></div>
+            <div class="vs-sub" id="vsSub"></div>
           </div>
         </div>
-      </aside>
-
-    </div>
+        <div class="vs-actions">
+          <button type="button" class="btn btn-sm" id="vsPlay">▶ Dinle</button>
+          <button type="button" class="btn btn-sm ghost" id="vsRemove">✕ Kaldır</button>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <footer class="footer">
-    <div class="container">
-      Yazı okunmayabiliyor, ses dinleniyor. İkisi birlikte gönderilince ulaşma artar. 💌
+  <!-- @@TAIL@@ -->
+
+  <footer class="genbar">
+    <div class="container genbar-in">
+      <div class="gen-checks" id="genChecks"></div>
+      <button type="button" class="btn-generate" id="generateBtn" disabled><span class="gen-ic">🎬</span> VİDEOYU ÜRET</button>
     </div>
   </footer>
 
-  <div id="toast" class="toast hidden"></div>
+  <!-- Render ilerleme -->
+  <div class="modal hidden" id="renderModal" role="dialog" aria-modal="true">
+    <div class="modal-content render-box">
+      <h2>Video hazırlanıyor</h2>
+      <ul class="stage-list" id="renderStages"></ul>
+      <div class="render-bar"><div class="render-fill" id="renderFill"></div></div>
+      <div class="render-meta" id="renderMeta"></div>
+    </div>
+  </div>
 
-  <script src="app.js"></script>
+  <!-- Sonuç -->
+  <div class="modal hidden" id="resultModal" role="dialog" aria-modal="true">
+    <div class="modal-content result-box">
+      <div class="result-head"><span class="result-check">✓</span><h2>Videonuz hazır</h2></div>
+      <video id="resultVideo" controls playsinline></video>
+      <div class="result-time" id="resultTime"></div>
+      <div class="result-actions">
+        <button type="button" class="btn primary" id="dlBtn">⬇ MP4 İndir</button>
+        <button type="button" class="btn" id="waBtn">💬 WhatsApp'ta Paylaş</button>
+        <button type="button" class="btn" id="mailBtn">✉ E-posta</button>
+        <button type="button" class="btn ghost" id="newBtn">+ Yeni Duyuru</button>
+      </div>
+      <p class="result-note" id="resultNote"></p>
+      <button type="button" class="modal-close" id="resultClose" aria-label="Kapat">✕</button>
+    </div>
+  </div>
+
+  <!-- Ayarlar -->
+  <div class="modal hidden" id="settingsModal" role="dialog" aria-modal="true">
+    <div class="modal-content settings-box">
+      <h2>Okul kimliği</h2>
+      <p class="hint">Bu bilgiler video içinde kullanılır ve bu tarayıcıda saklanır.</p>
+      <div class="field"><label for="sSchool">Okul adı</label><input type="text" id="sSchool" maxlength="80"></div>
+      <div class="field"><label for="sPhone">Telefon</label><input type="text" id="sPhone" maxlength="40" placeholder="0216 xxx xx xx"></div>
+      <div class="field"><label for="sAddress">Adres</label><input type="text" id="sAddress" maxlength="120"></div>
+      <div class="field">
+        <label>Logo</label>
+        <div class="logo-row">
+          <div class="logo-preview" id="sLogoPreview">🏫</div>
+          <div class="logo-actions">
+            <label class="btn btn-sm" for="sLogoInput">Görsel seç</label>
+            <button type="button" class="btn btn-sm ghost" id="sLogoClear">Kaldır</button>
+          </div>
+          <input type="file" id="sLogoInput" accept="image/png,image/jpeg,image/webp" hidden>
+        </div>
+        <span class="hint-sub">PNG/JPG, en fazla 300 KB. Videonun giriş sahnesinde görünür.</span>
+      </div>
+      <div class="settings-actions">
+        <button type="button" class="btn primary" id="sSave">Kaydet</button>
+        <button type="button" class="btn ghost" id="sReset">Varsayılana dön</button>
+      </div>
+      <button type="button" class="modal-close" id="settingsClose" aria-label="Kapat">✕</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
