@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Velilere görsel + ses + hareket ile mesaj hazırlama aracı. Yazı okunmayabilir, ses dinlenir; ikisi birlikte gönderilince ulaşma artar.">
+  <title>Veli Mesajı — Görsel + Ses + Hareket</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💌</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="logo">💌 Veli Mesajı</div>
+      <div class="tagline">Görsel + Ses + Hareket — birlikte gönderilince ulaşma artar</div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <section class="intro card">
+      <h1>Veli mesajınızı hazırlayın</h1>
+      <p>
+        Yazı okunmayabilir, <strong>ses dinlenir</strong>. Metni yazın, sesi ekleyin,
+        ikisi birlikte gitsin. <em>Sesi 40 saniyenin altında tutun.</em>
+      </p>
+      <ol class="steps">
+        <li><span>1</span> Metni yaz</li>
+        <li><span>2</span> Sesi ekle (kaydet veya yükle)</li>
+        <li><span>3</span> İkisi aynı bilgiyi mi veriyor? Kontrol et</li>
+        <li><span>4</span> İndir ve velilere gönder</li>
+      </ol>
+    </section>
+
+    <div class="grid">
+
+      <!-- ============ DÜZENLEYİCİ ============ -->
+      <section class="editor">
+        <div class="card">
+          <h2>1 · Mesaj metni</h2>
+
+          <div class="templates">
+            <span class="tmpl-label">Hazır şablonlar:</span>
+            <div class="tmpl-btns" id="templateButtons"></div>
+          </div>
+
+          <label for="school">Okul adı <span class="opt">(isteğe bağlı)</span></label>
+          <input type="text" id="school" placeholder="Örn. Atatürk İlkokulu" maxlength="80">
+
+          <label for="title">Başlık</label>
+          <input type="text" id="title" placeholder="Değerli Velilerimiz" maxlength="120">
+
+          <label for="body">Mesaj <span class="count" id="bodyCount"></span></label>
+          <textarea id="body" rows="7" placeholder="Velilere iletmek istediğiniz bilgiyi kısa ve net yazın. Ses kaydıyla aynı bilgiyi versin." maxlength="2000"></textarea>
+
+          <label for="sign">İmza / gönderen</label>
+          <input type="text" id="sign" placeholder="Örn. Sınıf Öğretmeni Ayşe Yılmaz" maxlength="80">
+        </div>
+
+        <div class="card">
+          <h2>2 · Ses</h2>
+          <p class="hint">Kaydınızı <strong>40 saniyenin altında</strong> tutun. Ses yoksa bile mesaj "Sesli dinle" ile tarayıcıda okunur, ama gerçek ses kaydı her zaman daha etkilidir.</p>
+
+          <div class="rec-row">
+            <button id="recordBtn" class="rec-btn" title="Mikrofonla kaydet" type="button">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+            </button>
+            <div class="rec-info">
+              <div class="rec-label" id="recLabel">Kayıt başlat</div>
+              <div class="timer-bar"><div class="timer-fill" id="recBar"></div></div>
+              <div class="rec-meta"><span id="recTimer">00:00</span> <span id="recHint"></span></div>
+            </div>
+            <button id="stopBtn" class="btn danger hidden" type="button">⏹ Durdur</button>
+          </div>
+
+          <div class="upload-row">
+            <label class="btn ghost" for="fileInput">📁 Ses dosyası yükle</label>
+            <input type="file" id="fileInput" accept="audio/*" hidden>
+            <span class="upload-note">MP3, WAV, M4A, OGG… (en fazla 25 MB)</span>
+          </div>
+
+          <div id="audioChip" class="audio-chip hidden">
+            <span class="chip-icon">🎙️</span>
+            <span class="chip-name" id="chipName"></span>
+            <span class="chip-dur" id="chipDur"></span>
+            <button type="button" id="chipPlay" class="chip-btn">▶ Dinle</button>
+            <button type="button" id="chipRemove" class="chip-btn danger" title="Sesi kaldır">✕</button>
+          </div>
+          <div id="recErr" class="rec-err hidden"></div>
+        </div>
+
+        <div class="card">
+          <h2>3 · Kontrol listesi</h2>
+          <ul class="checklist" id="checklist">
+            <li data-item="duration"><span class="chk-mark">…</span><span class="chk-text">Ses 40 saniyenin altında</span></li>
+            <li data-item="same">
+              <span class="chk-mark" id="sameMark">…</span>
+              <label class="chk-inline">
+                <input type="checkbox" id="sameCheck"> Metindeki bilgiler ses kaydıyla aynı — dinleyip kontrol ettim
+              </label>
+            </li>
+            <li data-item="contact"><span class="chk-mark" id="contactMark">…</span><span class="chk-text">Mesajda tarih, saat veya iletişim bilgisi var</span></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h2>4 · Paylaş</h2>
+          <p class="hint">İki düğme de aynı bilgiyi içerir: görsel kart + ses. İndirdiğiniz dosyayı WhatsApp, Telegram vb. üzerinden velilere gönderin.</p>
+          <div class="share-row">
+            <button id="exportBtn" class="btn primary" type="button">📄 İndir — Tek HTML dosyası (görsel + ses + hareket)</button>
+            <button id="linkBtn" class="btn ghost" type="button">🔗 Metin bağlantısı kopyala</button>
+            <button id="clearBtn" class="btn ghost subtle" type="button">🗑 Temizle</button>
+          </div>
+          <p class="hint" id="exportNote"></p>
+        </div>
+      </section>
+
+      <!-- ============ ÖNİZLEME ============ -->
+      <aside class="preview">
+        <div class="card sticky">
+          <h2>Canlı önizleme</h2>
+          <div class="preview-wrap">
+            <div class="preview-card" id="previewCard">
+              <div class="blob blob-a"></div>
+              <div class="blob blob-b"></div>
+              <div class="blob blob-c"></div>
+              <div class="pc-inner">
+                <div class="pc-school" id="prevSchool"></div>
+                <h3 class="pc-title" id="prevTitle"></h3>
+                <div class="pc-body" id="prevBody"></div>
+
+                <div class="audio-card" id="audioCard">
+                  <div class="eq" id="eq" aria-hidden="true">
+                    <span></span><span></span><span></span><span></span><span></span>
+                  </div>
+                  <button type="button" class="play-btn" id="playBtn" title="Oynat / duraklat">
+                    <svg class="ic-play" viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                    <svg class="ic-pause" viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+                  </button>
+                  <div class="audio-meta">
+                    <div class="audio-name" id="audioName">Sesli mesaj</div>
+                    <input type="range" id="seek" class="seek" min="0" max="1000" value="0" step="1">
+                    <div class="audio-time"><span id="timeCur">0:00</span> / <span id="timeDur">0:00</span></div>
+                  </div>
+                </div>
+
+                <div class="tts-row">
+                  <button type="button" class="btn light" id="ttsBtn">🔊 Sesli dinle (metni okur)</button>
+                </div>
+                <div class="no-audio-note" id="noAudioNote">Ses eklenmedi — kart yalnızca görsel + otomatik okuma ile gönderilir.</div>
+
+                <div class="pc-sign" id="prevSign"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      Yazı okunmayabiliyor, ses dinleniyor. İkisi birlikte gönderilince ulaşma artar. 💌
+    </div>
+  </footer>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
