@@ -381,7 +381,7 @@ const { JSDOM, VirtualConsole } = await import('jsdom');
   assert.ok(!d.querySelector('[data-tabbody="file"]').classList.contains('hidden'), 'Ses Dosyası sekmesi açılmalı');
 
   // şablon çipi doldurur
-  const chip = d.querySelector('.chip-chip');
+  const chip = d.querySelector('#msgTemplates .seg-btn');
   chip.click();
   assert.ok(d.querySelector('#title').value, 'şablon başlık doldurmalı');
 

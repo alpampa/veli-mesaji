@@ -12,6 +12,8 @@ export class AudioEngine {
     this._sink = null;
     this.analyser = null;
     this._analyserData = null;
+    this._gain = null;   // hoparlör kazancı — sessize alma (dışa aktarma bundan etkilenmez)
+    this._muted = false;
   }
 
   async init() {
@@ -19,9 +21,28 @@ export class AudioEngine {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) throw new Error('Tarayıcınız ses çalmayı desteklemiyor.');
       this.ctx = new AC();
+      this._gain = this.ctx.createGain();
+      this._gain.gain.value = this._muted ? 0 : 1;
+      this._gain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') await this.ctx.resume();
     return this.ctx;
+  }
+
+  setMuted(m) {
+    this._muted = !!m;
+    if (this._gain && this.ctx) {
+      this._gain.gain.setTargetAtTime(this._muted ? 0 : 1, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  get muted() {
+    return this._muted;
+  }
+
+  toggleMuted() {
+    this.setMuted(!this._muted);
+    return this._muted;
   }
 
   async setBufferFromBlob(blob) {
@@ -78,9 +99,9 @@ export class AudioEngine {
     src.buffer = this.buffer;
     if (this.analyser) {
       src.connect(this.analyser);
-      this.analyser.connect(sink || this.ctx.destination);
+      this.analyser.connect(sink || this._gain || this.ctx.destination);
     } else {
-      src.connect(sink || this.ctx.destination);
+      src.connect(sink || this._gain || this.ctx.destination);
     }
     const startAt = this.ctx.currentTime;
     src.start(startAt, Math.min(offset, this.buffer.duration));

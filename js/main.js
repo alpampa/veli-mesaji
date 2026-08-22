@@ -68,6 +68,9 @@ const els = {
   templateGrid: $('#templateGrid'), readiness: $('#readiness'),
   stageEmpty: $('#stageEmpty'),
   playBtn: $('#playBtn'), icPlay: $('.t-ic-play'), icPause: $('.t-ic-pause'),
+  replayBtn: $('#replayBtn'),
+  muteBtn: $('#muteBtn'), icMuteOn: $('.t-ic-on'), icMuteOff: $('.t-ic-off'),
+  fullscreenBtn: $('#fullscreenBtn'),
   tCur: $('#tCur'), tDur: $('#tDur'), tNote: $('#tNote'),
   timeline: $('#timeline'),
   voiceTabs: $$('.tab', $('#voiceTabs')), tabBodies: $$('.tab-body'),
@@ -89,6 +92,7 @@ const els = {
   sLogoInput: $('#sLogoInput'), sLogoPreview: $('#sLogoPreview'), sLogoClear: $('#sLogoClear'),
   sTtsUrl: $('#sTtsUrl'), sTtsAuto: $('#sTtsAuto'), sTtsTest: $('#sTtsTest'), sTtsResult: $('#sTtsResult'),
   sApiKey: $('#sApiKey'),
+  devStatus: $('#devStatus'),
   sSave: $('#sSave'), sReset: $('#sReset'),
   saveDraftBtn: $('#saveDraftBtn'), draftsBtn: $('#draftsBtn'), draftCount: $('#draftCount'),
   draftModal: $('#draftModal'), draftName: $('#draftName'), draftSaveBtn: $('#draftSaveBtn'),
@@ -345,10 +349,48 @@ function updateTimeUI() {
 }
 
 els.playBtn.addEventListener('click', togglePlay);
+
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && !['INPUT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement?.tagName)) {
     e.preventDefault();
     togglePlay();
+  }
+});
+
+/* Baştan oynat: kafayı 0'a al, oynuyorsa sesi de 0'dan yeniden başlat */
+els.replayBtn.addEventListener('click', () => {
+  if (!renderer.ok) return;
+  seek(0);
+  if (!playing) play();
+});
+
+/* Sessize alma: yalnızca hoparlör çıkışını susturur, dışa aktarılan sesi etkilemez */
+els.muteBtn.addEventListener('click', () => {
+  const muted = audioEngine.toggleMuted();
+  els.muteBtn.classList.toggle('toggled', muted);
+  els.muteBtn.title = muted ? 'Sesi aç' : 'Sesi kapat';
+  els.icMuteOn.style.display = muted ? 'none' : '';
+  els.icMuteOff.style.display = muted ? '' : 'none';
+});
+
+/* Tam ekran: sahne kutusunu büyütür (9:16 video tam ekranda ortalanır) */
+els.fullscreenBtn.addEventListener('click', () => {
+  const frame = document.querySelector('.stage');
+  if (!frame) return;
+  if (document.fullscreenElement) {
+    document.exitFullscreen && document.exitFullscreen().catch(() => {});
+  } else if (frame.requestFullscreen) {
+    frame.requestFullscreen().catch(() => {});
+  }
+});
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement;
+  els.fullscreenBtn.classList.toggle('toggled', on);
+  if (!on) {
+    // tam ekrandan çıkınca tuval boyutu tekrar ölçülsün
+    measureTimeline();
+    drawTimeline();
+    renderCurrent();
   }
 });
 
@@ -358,7 +400,7 @@ let tlHover = -1;
 let tlDrawQueued = false;
 
 function measureTimeline() {
-  const wrap = $('.timeline-wrap');
+  const wrap = $('.timeline-band');
   const w = Math.max(200, wrap.clientWidth);
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   els.timeline.width = Math.round(w * dpr);
@@ -375,8 +417,8 @@ function timelineCtx() {
 }
 
 const C = {
-  ink: '#191612', muted: '#8A8175', faint: '#C9C1B4',
-  track: '#EFEBE4', primary: '#C9452C', ok: '#0E7C6B',
+  ink: '#132A44', muted: '#5F7891', faint: '#B9CBDE',
+  track: '#E3EDF7', primary: '#2F6FE0', ok: '#14939A',
 };
 
 function drawTimeline() {
@@ -740,7 +782,7 @@ async function refreshVoiceStudio() {
     });
     if (!ok) {
       setTtsStatus('');
-      renderTtsSetup();
+      showTtsOffline();
       startTtsAutoRetry();
       return;
     }
@@ -750,7 +792,7 @@ async function refreshVoiceStudio() {
   } catch (err) {
     console.error('TTS keşif hatası:', err);
     setTtsStatus('');
-    renderTtsSetup();
+    showTtsOffline();
     startTtsAutoRetry();
   }
 }
@@ -783,30 +825,20 @@ export function __stopBackgroundTimers() {
   stopTtsAutoRetry();
 }
 
-function renderTtsSetup() {
+function showTtsOffline() {
   els.voiceGallery.classList.add('hidden');
   els.ttsSetup.classList.remove('hidden');
-  const diag = (tts.diagnostics || []).join('<br>');
   els.ttsSetup.innerHTML = `
     <div class="setup-ic">🎙</div>
-    <h4>Yapay sesler kullanılamıyor</h4>
-    <p>Ön yüz, sesi yerel <b>TTS sunucusuna</b> gönderir (gizlilik + çevrimdışı Piper desteği). Sunucu şu an erişilemiyor.</p>
-    <ol class="setup-steps">
-      <li><code>pip install -r server/requirements.txt</code></li>
-      <li><code>python server/server.py</code> (ya da <code>start-tts.bat</code>)</li>
-      <li><b>Sunucu sürümünü açın</b> → sesler otomatik bağlanır</li>
-    </ol>
+    <h4>Ses motoruna bağlanılamadı</h4>
+    <p>Seslendirme sunucusuna ulaşılamıyor. Bağlantıyı yeniden deneyin ya da <b>Ses Kaydı</b> / <b>Ses Dosyası</b> sekmelerini kullanın.</p>
     <div class="vc-actions">
-      <button type="button" class="btn btn-sm" id="ttsOpenServer">▶ Sunucu sürümünü aç (önerilir)</button>
-      <button type="button" class="btn btn-sm ghost" id="ttsRetry">↻ Yeniden Dene</button>
+      <button type="button" class="btn btn-sm" id="ttsRetry">↻ Yeniden Dene</button>
+      <button type="button" class="btn btn-sm ghost" id="ttsOpenSettings">⚙ Ayarlar</button>
     </div>
-    <p class="setup-note"><b>Neden?</b> Bu sayfa (GitHub Pages, https) tarayıcının yerel ağ iznini gerektirir. Sunucu sürümü (<code>http://127.0.0.1:8765</code>) ön yüzü ve TTS'i <b>aynı adresten</b> sunar — izin, CORS, karışık içerik sorunu olmaz.</p>
-    <p class="setup-note">Sunucu olmadan da <b>Ses Kaydı</b> ve <b>Ses Dosyası</b> sekmeleriyle video üretebilirsiniz.</p>`;
-  $('#ttsOpenServer').addEventListener('click', () => {
-    window.open('http://127.0.0.1:8765', '_blank', 'noopener');
-    setTtsStatus('sample', 'Sunucu sürümü yeni sekmede açılıyor — orada sesler otomatik bağlanır.');
-  });
+    <p class="setup-note">Teknik ayrıntılar: Ayarlar → Geliştirici → Sistem Durumu.</p>`;
   $('#ttsRetry').addEventListener('click', refreshVoiceStudio);
+  $('#ttsOpenSettings').addEventListener('click', openSettings);
 }
 
 function renderVoiceGallery(voices) {
@@ -937,10 +969,11 @@ function renderMsgTemplates() {
   MESSAGE_TEMPLATES.forEach((tpl) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'chip-chip';
+    b.className = 'seg-btn';
     b.innerHTML = `${escapeHtml(tpl.icon)} ${escapeHtml(tpl.label)}`;
     b.title = 'Bu şablonu doldurur';
     b.addEventListener('click', () => {
+      els.msgTemplates.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('active', x === b));
       applyFields({ ...tpl.fields, school: state.fields.school });
       toast(`${tpl.label} şablonu dolduruldu`);
     });
@@ -1389,6 +1422,38 @@ function applySettingsToRenderer() {
   }
 }
 
+/* Geliştirici → Sistem Durumu: sunucu bağlantısı + provider sağlığı (teknik detaylar) */
+async function renderDevStatus() {
+  if (!els.devStatus) return;
+  els.devStatus.innerHTML = '';
+  const add = (ok, text) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="ds-dot ${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✕'}</span><span>${text}</span>`;
+    els.devStatus.append(li);
+  };
+  if (tts.baseUrl) {
+    add(true, `Sunucu bağlı: ${escapeHtml(tts.baseUrl)}`);
+    add(tts.lastVoices.length > 0, `${tts.lastVoices.length} kullanılabilir ses listelendi`);
+  } else {
+    add(false, 'TTS sunucusuna bağlanılamadı');
+    (tts.diagnostics || []).forEach((d) => add(false, escapeHtml(d)));
+  }
+  try {
+    if (tts.baseUrl) {
+      const res = await fetch(tts.baseUrl + '/api/health');
+      if (res.ok) {
+        const h = await res.json();
+        (h.providers || []).forEach((p) => {
+          add(p.available,
+            `${escapeHtml(p.label)} — ${p.offline ? 'çevrimdışı mod' : 'çevrimiçi'}${p.error ? ' · ' + escapeHtml(p.error) : ''}`);
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Sistem durumu alınamadı:', err);
+  }
+}
+
 function openSettings() {
   els.sSchool.value = state.settings.schoolName;
   els.sPhone.value = state.settings.schoolPhone;
@@ -1402,6 +1467,7 @@ function openSettings() {
   } else {
     els.sLogoPreview.textContent = '🏫';
   }
+  renderDevStatus();
   els.settingsModal.classList.remove('hidden');
 }
 
@@ -1443,6 +1509,7 @@ els.sTtsTest.addEventListener('click', async () => {
     els.sTtsResult.textContent = '✗ Ulaşılamadı — sunucunun çalıştığından emin olun.';
     els.sTtsResult.classList.remove('ok');
   }
+  renderDevStatus();
 });
 
 els.sReset.addEventListener('click', () => {
