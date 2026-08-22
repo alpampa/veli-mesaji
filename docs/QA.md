@@ -34,6 +34,16 @@ elle doğrulama önerilir.
 | 23 | TTS Bağlantıyı Test Et | Sunucuyu dener, sonucu gösterir | Kod ✓; canlı sunucu ✓ | ✓ PASS |
 | 24 | Taslak (otomatik kayıt + yükle) | Kaydeder/geri yükler | Kod ✓ | ✓ PASS |
 | 25 | Yeniden Dene (TTS kurulumu) | Sunucuyu tekrar arar | Kod ✓ | ✓ PASS |
+| 26 | Taslağı Kaydet | Taslağı adıyla + sesle saklar (IndexedDB) | Kod ✓; birim test ✓ (blob dahil) | ✓ PASS |
+| 27 | Taslaklar (liste) | Kayıtlı taslakları listeler, sayaç gösterir | Kod ✓; jsdom ✓ | ✓ PASS |
+| 28 | Taslak Aç | Alanları + sesi (varsa) geri yükler | Kod ✓; jsdom ✓ | ✓ PASS |
+| 29 | Taslak Sil | Kaydı kaldırır | Kod ✓; jsdom ✓ | ✓ PASS |
+| 30 | ↗ PAYLAŞ (sonuç CTA) | Paylaşım sayfasını açar | Kod ✓ | ✓ PASS* |
+| 31 | Paylaşım: WhatsApp | Web Share dosya → yoksa indir + wa.me | Kod ✓; fallback mantığı test ✓ | ✓ PASS* |
+| 32 | Paylaşım: E-posta | mailto + eke yönlendirme | Kod ✓ | ✓ PASS* |
+| 33 | Paylaşım: Sistemle Paylaş | navigator.share dosya | Kod ✓; fallback test ✓ | ✓ PASS* |
+| 34 | Paylaşım: Bağlantıyı Kopyala | Metin kopyalar | Kod ✓ | ✓ PASS |
+| 35 | Paylaşım: MP4'ü İndir | Anlamlı adla indirir | Kod ✓; ad testi ✓ | ✓ PASS |
 
 \* Tarayıcı/cihaz API'sine bağlı (mikrofon, MediaRecorder, navigator.share) —
 gerçek tarayıcıda elle doğrulama önerilir.
@@ -58,7 +68,12 @@ gerçek tarayıcıda elle doğrulama önerilir.
 | Render aşamaları + ilerleme | ✓ | Modal + `%` |
 | MP4 (H.264/AAC) | ✓* | Chrome/Edge/Safari doğrudan; FFmpeg yedek |
 | FFmpeg dönüştürme (Firefox) | ✓* | @ffmpeg/ffmpeg CDN (yalnızca webm yolu) |
-| Sonuç ekranı (oynat/indir/paylaş) | ✓ | Kod + Web Share |
+| Sonuç ekranı (oynat/indir/paylaş) | ✓ | PAYLAŞ ana CTA + MP4'ü Kaydet |
+| Paylaşım öncesi son kontrol | ✓ | ✓ video/ses/süre/MP4/1080×1920; 40 sn aşımı paylaşılamaz |
+| Taslağı Kaydet (ad + ses dahil) | ✓ | IndexedDB; blob saklanır; birim test ✓ |
+| Taslak listesi / aç / sil | ✓ | jsdom testi ✓ |
+| WhatsApp / E-posta / Sistem paylaşımı | ✓* | Web Share + fallback akışları |
+| Paylaşım sonrası durum | ✓ | "✓ Paylaşıma hazır — Video/Süre" |
 | Hata durumları | ✓ | Kullanıcı dostu mesaj + console detayı |
 | TTS sunucusu yokken çalışma | ✓ | Kayıt/Dosya devam; yapay ses kurulum yönergesi |
 

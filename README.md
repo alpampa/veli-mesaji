@@ -98,7 +98,22 @@ görünür (ör. `tr_TR-fahrettin-medium` → erkek ses).
 - **1080×1920 · 9:16 · H.264 + AAC · MP4**
 - Chrome/Edge/Safari: `MediaRecorder` doğrudan MP4; Firefox: webm → **FFmpeg
   (WASM)** dönüştürme
-- Aşamalı render ekranı, sonuçta oynat/indir/WhatsApp/e-posta
+- Aşamalı render ekranı; sonuçta **↗ PAYLAŞ** (ana CTA) + **⬇ MP4'ü Kaydet**
+
+### Kaydetme
+- **Taslağı Kaydet** — okul, başlık, mesaj, tarih/saat/yer, imza, şablon,
+  sahne tanımları, ses meta bilgisi (provider + ses) ve **ses dosyası**
+  IndexedDB'de saklanır; istediğiniz zaman geri açılır (adlı taslak listesi,
+  silme, sayaç)
+- Oturum taslağı otomatik kaydedilir (sayfa yenilenince geri gelir)
+
+### Paylaşım sayfası
+- **WhatsApp** (Web Share dosya → yoksa otomatik indir + wa.me), **E-posta**
+  (konu + mesaj + ek yönlendirmesi), **↗ Sistemle Paylaş** (navigator.share),
+  **🔗 Bağlantıyı Kopyala**, **⬇ MP4'ü İndir**
+- Açılmadan önce son kontrol: ✓ video / ✓ ses / ✓ süre / ✓ MP4 / ✓ 1080×1920;
+  40 sn aşımı **paylaşılabilir işaretlenmez**
+- Başarılı paylaşım sonrası "✓ Paylaşıma hazır — Video · Süre" durumu
 
 ## Proje yapısı
 
@@ -110,6 +125,8 @@ js/scenes.js                  sahne dağıtımı (ses süresine göre)
 js/audio.js                   AudioEngine — decode, oynatma, dalga formu
 js/tts.js                     BackendTTSProvider + BrowserSpeechProvider
 js/exporter.js                doğrulama + MediaRecorder MP4 + FFmpeg yedek
+js/drafts.js                  taslak deposu (IndexedDB + bellek yedeği, ses dahil)
+js/share.js                   paylaşım sayfası + yardımcılar
 js/templates.js               video tasarım + duyuru şablonları + demo içerik
 server/server.py              TTS mikro servisi (stdlib, CORS açık, statik ön yüz)
 server/tts/*.py               provider mimarisi (edge / piper / windows)

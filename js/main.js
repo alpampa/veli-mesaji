@@ -1,7 +1,10 @@
-/* Veli Mesajı Studio — ana uygulama (V2)
+/* Veli Mesajı Studio — ana uygulama (V2.1)
  *
  * TTS üretimi sunucu tarafındadır (server/server.py). Bu dosya yalnızca
  * sunucuyu bulur, ses listesini çeker ve WAV'ı oynatır.
+ *
+ * Kaydet: explicit "Taslağı Kaydet" (IndexedDB — ses dosyası dahil)
+ * Paylaş: sonuç ekranında PAYLAŞ → paylaşım sayfası (WhatsApp/E-posta/Sistem/Bağlantı/İndir)
  */
 
 import {
@@ -19,8 +22,10 @@ import {
   BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT, PROVIDER_META,
 } from './tts.js';
 import {
-  validateBeforeExport, exportVideo, shareFile, waShareUrl, mailtoUrl,
+  validateBeforeExport, exportVideo, downloadBlob,
 } from './exporter.js';
+import { createDraftStore } from './drafts.js';
+import { ShareSheet, shareFilename } from './share.js';
 
 const DRAFT_KEY = 'vms.v2.draft';
 const SETTINGS_KEY = 'vms.v2.settings';
@@ -31,7 +36,7 @@ const MAX_SECONDS = 40;
 const state = {
   fields: { ...DEFAULT_FIELDS, school: '' },
   templateId: 'cinematic',
-  audio: null, // { kind, name, blob, buffer, duration, peaks, url }
+  audio: null, // { kind, name, blob, buffer, duration, peaks, url, provider?, voice? }
   sameCheck: false,
   settings: { ...DEFAULT_SETTINGS, ...loadJSON(SETTINGS_KEY, {}) },
 };
@@ -40,6 +45,7 @@ const audioEngine = new AudioEngine();
 const renderer = new StudioRenderer($('#stage'));
 const tts = new BackendTTSProvider();
 const speech = new BrowserSpeechProvider();
+const draftStore = createDraftStore();
 
 let previewTime = 0;
 let playing = false;
@@ -49,6 +55,8 @@ let demoMode = false;
 let demoClock = null;
 let lastResultUrl = null;
 let lastResultName = 'veli-mesaji.mp4';
+let lastResultBlob = null;
+let shareSheet = null;
 
 /* ---------------- Elemanlar ---------------- */
 
@@ -74,14 +82,17 @@ const els = {
   renderFill: $('#renderFill'), renderMeta: $('#renderMeta'),
   resultModal: $('#resultModal'), resultVideo: $('#resultVideo'),
   resultTime: $('#resultTime'), resultNote: $('#resultNote'),
-  dlBtn: $('#dlBtn'), waBtn: $('#waBtn'), mailBtn: $('#mailBtn'), newBtn: $('#newBtn'),
+  shareBtn: $('#shareBtn'), dlBtn: $('#dlBtn'), newBtn: $('#newBtn'),
   resultClose: $('#resultClose'),
   settingsModal: $('#settingsModal'), settingsClose: $('#settingsClose'),
   sSchool: $('#sSchool'), sPhone: $('#sPhone'), sAddress: $('#sAddress'),
   sLogoInput: $('#sLogoInput'), sLogoPreview: $('#sLogoPreview'), sLogoClear: $('#sLogoClear'),
   sTtsUrl: $('#sTtsUrl'), sTtsAuto: $('#sTtsAuto'), sTtsTest: $('#sTtsTest'), sTtsResult: $('#sTtsResult'),
   sSave: $('#sSave'), sReset: $('#sReset'),
-  draftBtn: $('#draftBtn'), draftState: $('#draftState'), settingsBtn: $('#settingsBtn'),
+  saveDraftBtn: $('#saveDraftBtn'), draftsBtn: $('#draftsBtn'), draftCount: $('#draftCount'),
+  draftModal: $('#draftModal'), draftName: $('#draftName'), draftSaveBtn: $('#draftSaveBtn'),
+  draftList: $('#draftList'), draftClose: $('#draftClose'),
+  settingsBtn: $('#settingsBtn'),
   toast: $('#toast'),
 };
 
@@ -387,7 +398,6 @@ function drawTimeline() {
     ctx.fillStyle = active ? C.primary : hover ? C.ink : C.track;
     roundRect(ctx, x, 30, w, 24, 6);
     ctx.fill();
-    // üst etiket
     if (w > 30) {
       ctx.font = '600 9px Inter, sans-serif';
       ctx.fillStyle = active ? C.primary : C.muted;
@@ -630,7 +640,7 @@ function handleFile(file) {
 
 /* ---------------- Ses: ortak ---------------- */
 
-async function setAudio({ kind, name, blob }) {
+async function setAudio({ kind, name, blob, provider = null, voice = null }) {
   exitDemo();
   stopPlayback();
   let buffer;
@@ -643,7 +653,7 @@ async function setAudio({ kind, name, blob }) {
   if (state.audio) URL.revokeObjectURL(state.audio.url);
   const url = URL.createObjectURL(blob);
   const peaks = await audioEngine.decodePeaks(720);
-  state.audio = { kind, name, blob, buffer, duration: buffer.duration, peaks, url };
+  state.audio = { kind, name, blob, buffer, duration: buffer.duration, peaks, url, provider, voice };
   previewTime = 0;
   refreshScenes();
   updateVoiceSummary();
@@ -842,7 +852,7 @@ async function generateVoice(v, card) {
   setTtsStatus('busy', `<div class="busy-row"><span class="spinner"></span><div>${escapeHtml(v.name)} seslendiriyor…</div></div>`);
   try {
     const res = await tts.generate(text, v.id);
-    await setAudio({ kind: 'ai', name: `${v.name} sesi`, blob: res.blob });
+    await setAudio({ kind: 'ai', name: `${v.name} sesi`, blob: res.blob, provider: v.provider, voice: v.id });
     setTtsStatus('ok', `✓ ${escapeHtml(v.name)} ile seslendirildi — ${fmtClock(state.audio.duration, true)}`);
     toast(`Ses oluşturuldu: ${v.name}`);
   } catch (err) {
@@ -1093,13 +1103,14 @@ async function generate() {
   }
 }
 
-/* ---------------- Sonuç ---------------- */
+/* ---------------- Sonuç + Paylaş ---------------- */
 
 function showResult({ blob, transcoded, transcodeError }) {
   if (lastResultUrl) URL.revokeObjectURL(lastResultUrl);
   lastResultUrl = URL.createObjectURL(blob);
+  lastResultBlob = blob;
   const ext = blob.type && blob.type.includes('mp4') ? 'mp4' : 'webm';
-  lastResultName = `veli-mesaji-${new Date().toISOString().slice(0, 10)}.${ext}`;
+  lastResultName = ext === 'mp4' ? shareFilename(state.fields.title) : `veli-mesaji-${new Date().toISOString().slice(0, 10)}.webm`;
   els.resultVideo.src = lastResultUrl;
   els.resultVideo.load();
 
@@ -1117,32 +1128,25 @@ function showResult({ blob, transcoded, transcodeError }) {
   els.resultModal.classList.remove('hidden');
 }
 
-const filename = () => lastResultName;
+function openShare() {
+  if (!lastResultBlob) {
+    toast('Önce videoyu üretin.');
+    return;
+  }
+  shareSheet.open({
+    blob: lastResultBlob,
+    filename: lastResultName,
+    title: state.fields.title || 'Veli Duyurusu',
+    duration: state.audio ? state.audio.duration : videoDuration(),
+  });
+}
+
+els.shareBtn.addEventListener('click', openShare);
 
 els.dlBtn.addEventListener('click', () => {
-  if (lastResultUrl) {
-    const a = document.createElement('a');
-    a.href = lastResultUrl;
-    a.download = filename();
-    document.body.append(a);
-    a.click();
-    a.remove();
-    toast('İndirme başladı');
-  }
-});
-
-els.waBtn.addEventListener('click', async () => {
-  const blob = await (await fetch(lastResultUrl)).blob();
-  const res = await shareFile(blob, filename(), 'Veli Duyurusu');
-  if (res.method === 'native') return;
-  const text = `Merhaba! Veli duyurumuzun videosu hazır. İndirip WhatsApp'tan gönderebilirsiniz:\n${location.href}`;
-  window.open(waShareUrl(text), '_blank', 'noopener');
-});
-
-els.mailBtn.addEventListener('click', () => {
-  const subject = state.fields.title || 'Veli Duyurusu';
-  const body = `Merhaba,\n\nVeli duyurumuzun videosu ekteki MP4 dosyasıdır.\n${location.href}\n\n${state.fields.school || ''}`;
-  window.location.href = mailtoUrl({ subject, body });
+  if (!lastResultBlob) return;
+  downloadBlob(lastResultBlob, lastResultName);
+  toast('İndirme başladı');
 });
 
 els.newBtn.addEventListener('click', () => {
@@ -1167,6 +1171,125 @@ els.clearBtn.addEventListener('click', () => {
   state.sameCheck = false;
   applyFields({ school: '', title: '', date: '', time: '', location: '', body: '', sign: '' });
   toast('Temizlendi');
+});
+
+/* ---------------- Taslaklar ---------------- */
+
+function openDraftModal() {
+  els.draftName.value = state.fields.title ? `${state.fields.title} taslağı` : '';
+  els.draftModal.classList.remove('hidden');
+  renderDrafts();
+}
+
+function closeDraftModal() {
+  els.draftModal.classList.add('hidden');
+}
+
+function defaultDraftName() {
+  const t = state.fields.title || 'Duyuru';
+  return `${t} — ${new Date().toLocaleDateString('tr-TR')} ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+async function saveDraft() {
+  const a = state.audio;
+  const draft = {
+    name: els.draftName.value.trim() || defaultDraftName(),
+    title: state.fields.title || 'Duyuru',
+    fields: state.fields,
+    templateId: state.templateId,
+    sameCheck: state.sameCheck,
+    scenes: renderer.scenes,
+    audio: a ? { kind: a.kind, name: a.name, duration: a.duration, provider: a.provider || null, voice: a.voice || null } : null,
+    audioBlob: a ? a.blob : null,
+  };
+  try {
+    await draftStore.save(draft);
+    toast('Taslak kaydedildi' + (a ? ' (ses dahil)' : ''));
+    renderDrafts();
+  } catch (err) {
+    console.error('Taslak kaydedilemedi:', err);
+    toast('Taslak kaydedilemedi: ' + err.message, 5000);
+  }
+}
+
+async function renderDrafts() {
+  try {
+    const list = await draftStore.list();
+    els.draftCount.textContent = list.length ? String(list.length) : '';
+    els.draftList.innerHTML = '';
+    if (!list.length) {
+      els.draftList.innerHTML = '<p class="hint">Henüz kayıtlı taslak yok. Metninizi yazıp "Taslağı Kaydet" ile saklayın.</p>';
+      return;
+    }
+    [...list]
+      .sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0))
+      .forEach((d) => {
+        const row = document.createElement('div');
+        row.className = 'draft-row';
+        const date = new Date(d.updatedAt || d.createdAt || Date.now());
+        row.innerHTML = `
+          <div class="draft-info">
+            <div class="draft-name">${escapeHtml(d.name || 'Taslak')}</div>
+            <div class="draft-date">${date.toLocaleString('tr-TR')}</div>
+          </div>
+          <div class="draft-actions">
+            <button type="button" class="btn btn-sm" data-act="open">Aç</button>
+            <button type="button" class="btn btn-sm ghost" data-act="del" title="Sil">✕</button>
+          </div>`;
+        row.querySelector('[data-act="open"]').addEventListener('click', () => loadDraft(d.id));
+        row.querySelector('[data-act="del"]').addEventListener('click', async () => {
+          await draftStore.del(d.id);
+          renderDrafts();
+        });
+        els.draftList.append(row);
+      });
+  } catch (err) {
+    console.error('Taslak listesi alınamadı:', err);
+    els.draftList.innerHTML = '<p class="hint">Taslaklar okunamadı.</p>';
+  }
+}
+
+async function loadDraft(id) {
+  try {
+    const d = await draftStore.get(id);
+    if (!d) return;
+    exitDemo();
+    state.templateId = d.templateId || state.templateId;
+    renderer.setTemplate(VIDEO_TEMPLATES[state.templateId]);
+    els.templateGrid.querySelectorAll('.tmpl-card').forEach((x) =>
+      x.classList.toggle('active', x.dataset.id === state.templateId));
+    applyFields(d.fields || {});
+    state.sameCheck = !!d.sameCheck;
+    if (d.audioBlob) {
+      await setAudio({
+        kind: (d.audio && d.audio.kind) || 'file',
+        name: (d.audio && d.audio.name) || 'Taslak sesi',
+        blob: d.audioBlob,
+        provider: (d.audio && d.audio.provider) || null,
+        voice: (d.audio && d.audio.voice) || null,
+      });
+      toast('Taslak yüklendi — ses de dahil ✓');
+    } else {
+      toast(d.audio ? `Taslak yüklendi (ses: ${d.audio.name} — yeniden yükleyin)` : 'Taslak yüklendi');
+    }
+    closeDraftModal();
+    updateReadiness();
+    updateGenChecks();
+  } catch (err) {
+    console.error('Taslak yüklenemedi:', err);
+    toast('Taslak yüklenemedi: ' + err.message, 5000);
+  }
+}
+
+els.saveDraftBtn.addEventListener('click', openDraftModal);
+els.draftsBtn.addEventListener('click', openDraftModal);
+els.draftClose.addEventListener('click', closeDraftModal);
+els.draftModal.addEventListener('click', (e) => {
+  if (e.target === els.draftModal) closeDraftModal();
+});
+els.draftSaveBtn.addEventListener('click', saveDraft);
+els.draftName.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveDraft();
 });
 
 /* ---------------- Ayarlar ---------------- */
@@ -1271,7 +1394,7 @@ els.resultModal.addEventListener('click', (e) => {
   if (e.target === els.resultModal) els.resultModal.classList.add('hidden');
 });
 
-/* ---------------- Taslak ---------------- */
+/* ---------------- Otomatik taslak (oturum) ---------------- */
 
 const scheduleDraftSave = debounce(() => {
   const a = state.audio;
@@ -1281,24 +1404,7 @@ const scheduleDraftSave = debounce(() => {
     sameCheck: state.sameCheck,
     audioInfo: a ? { kind: a.kind, name: a.name, duration: a.duration } : null,
   });
-  els.draftState.textContent = 'kaydedildi';
-  setTimeout(() => { els.draftState.textContent = ''; }, 2500);
 }, 900);
-
-els.draftBtn.addEventListener('click', () => {
-  const d = loadJSON(DRAFT_KEY);
-  if (!d) { toast('Henüz taslak yok.'); return; }
-  exitDemo();
-  state.templateId = d.templateId || state.templateId;
-  renderer.setTemplate(VIDEO_TEMPLATES[state.templateId]);
-  els.templateGrid.querySelectorAll('.tmpl-card').forEach((x) =>
-    x.classList.toggle('active', x.dataset.id === state.templateId));
-  applyFields(d.fields || {});
-  state.sameCheck = !!d.sameCheck;
-  updateReadiness();
-  updateGenChecks();
-  toast(d.audioInfo ? `Taslak yüklendi (ses: ${d.audioInfo.name} — yeniden yükleyin)` : 'Taslak yüklendi');
-});
 
 /* ---------------- Boş durum ---------------- */
 
@@ -1320,10 +1426,27 @@ function init() {
   renderTemplateGrid();
   measureTimeline();
 
+  // paylaşım sayfası
+  shareSheet = new ShareSheet({
+    modal: $('#shareModal'),
+    title: $('#shareTitle'),
+    meta: $('#shareMeta'),
+    checks: $('#shareChecks'),
+    ready: $('#shareReady'),
+    readyInfo: $('#shareReadyInfo'),
+    whatsapp: $('#shareWhatsApp'),
+    email: $('#shareEmail'),
+    system: $('#shareSystem'),
+    link: $('#shareLink'),
+    download: $('#shareDownload'),
+    status: $('#shareStatus'),
+    close: $('#shareClose'),
+  });
+
   // ayarları uygula
   applySettingsToRenderer();
 
-  // taslak yükle ya da demo başlat
+  // oturum taslağı yükle ya da demo başlat
   const draft = loadJSON(DRAFT_KEY);
   if (draft && draft.fields) {
     state.templateId = draft.templateId || state.templateId;
@@ -1361,6 +1484,7 @@ function init() {
 
   // TTS sunucusunu ara (ses listesi + galeri)
   refreshVoiceStudio();
+  renderDrafts();
 }
 
 init();

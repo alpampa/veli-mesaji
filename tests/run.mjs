@@ -178,6 +178,65 @@ const { BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT } = await mod
   void ok; void p;
 }
 
+/* ---------- 5b) Taslak deposu (bellek) ---------- */
+const { createDraftStore } = await mod('js/drafts.js');
+
+{
+  const store = createDraftStore(); // node: indexedDB yok -> bellek yedeği
+  const blob = new Blob(['fake-audio-bytes'], { type: 'audio/wav' });
+  const id = await store.save({
+    name: 'Toplantı taslağı',
+    title: 'VELİ TOPLANTISI',
+    fields: { title: 'VELİ TOPLANTISI', body: 'Toplantı yarın.' },
+    templateId: 'school',
+    sameCheck: true,
+    audio: { kind: 'ai', name: 'Emel sesi', duration: 12.5, provider: 'edge', voice: 'edge:tr-TR-EmelNeural' },
+    audioBlob: blob,
+  });
+  assert.ok(id, 'id dönmeli');
+  const list = await store.list();
+  assert.equal(list.length, 1, 'liste 1 kayıt');
+  assert.equal(list[0].title, 'VELİ TOPLANTISI');
+  const full = await store.get(id);
+  assert.ok(full.audioBlob instanceof Blob, 'ses blobu saklanmalı');
+  assert.equal(full.audio.voice, 'edge:tr-TR-EmelNeural', 'voice meta saklanmalı');
+  assert.equal(full.templateId, 'school');
+  await store.del(id);
+  assert.equal((await store.list()).length, 0, 'silme çalışmalı');
+  console.log('✓ drafts: kaydet/liste/oku/sil + blob + meta');
+}
+
+/* ---------- 5c) Paylaşım mantığı ---------- */
+const { shareFilename, buildShareChecklist, systemShare, shareLinkText } = await mod('js/share.js');
+
+{
+  const fn = shareFilename('Veli Toplantısı', new Date('2026-08-22T10:00:00'));
+  assert.equal(fn, 'veli-mesaji-veli-toplantısı-2026-08-22.mp4', 'dosya adı: ' + fn);
+  const fn2 = shareFilename('', new Date('2026-08-22'));
+  assert.ok(fn2.includes('mesaj-2026-08-22'), 'boş başlık yedeği: ' + fn2);
+
+  const ok = buildShareChecklist({ duration: 28.4 });
+  assert.equal(ok.shareable, true);
+  assert.equal(ok.items.length, 5, '5 kontrol maddesi');
+  assert.ok(ok.items[2].ok, '28.4 sn ok');
+  const bad = buildShareChecklist({ duration: 42.7 });
+  assert.equal(bad.shareable, false, '42.7 sn paylaşılabilir DEĞİL');
+  assert.equal(bad.items[2].ok, false, 'süre maddesi ✗');
+
+  // sistem paylaşımı yok -> fallback
+  const navNo = { canShare: undefined, share: undefined };
+  assert.equal(await systemShare(new Blob(['x']), 'a.mp4', 't', navNo), 'fallback');
+  // canShare files desteklenmiyor -> fallback
+  const navNoFiles = { canShare: () => false, share: () => {} };
+  assert.equal(await systemShare(new Blob(['x']), 'a.mp4', 't', navNoFiles), 'fallback');
+  // destekleniyor -> native
+  const navYes = { canShare: () => true, share: async () => {} };
+  assert.equal(await systemShare(new Blob(['x']), 'a.mp4', 't', navYes), 'native');
+
+  assert.ok(shareLinkText('Toplantı', 'https://site').includes('Toplantı'));
+  console.log('✓ share: dosya adı, 40 sn kontrolü, sistem paylaşımı fallback/native');
+}
+
 /* ---------- 6) DOM boot testi (jsdom) ---------- */
 const { JSDOM, VirtualConsole } = await import('jsdom');
 
@@ -257,6 +316,33 @@ const { JSDOM, VirtualConsole } = await import('jsdom');
   assert.equal(d.querySelector('#title').value, '', 'temizle başlığı siler');
   assert.ok(!d.querySelector('#stageEmpty').classList.contains('hidden'), 'temizle sonrası boş durum görünür');
   assert.ok(d.querySelector('#generateBtn').disabled, 'temizle sonrası üretim engelli');
+
+  // --- Taslak sistemi ---
+  const titleInput = d.querySelector('#title');
+  titleInput.value = 'VELİ TOPLANTISI';
+  titleInput.dispatchEvent(new w.Event('input', { bubbles: true }));
+  d.querySelector('#saveDraftBtn').click();
+  assert.ok(!d.querySelector('#draftModal').classList.contains('hidden'), 'taslak modalı açılmalı');
+  d.querySelector('#draftName').value = 'Test taslağı';
+  d.querySelector('#draftSaveBtn').click();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(d.querySelectorAll('.draft-row').length, 1, 'liste 1 taslak göstermeli');
+  assert.equal(d.querySelector('#draftCount').textContent, '1', 'rozet sayacı 1');
+  // formu boşalt
+  titleInput.value = '';
+  titleInput.dispatchEvent(new w.Event('input', { bubbles: true }));
+  // aç: başlığı geri yükler ve modal kapanır
+  d.querySelector('.draft-row [data-act="open"]').click();
+  await new Promise((r) => setTimeout(r, 120));
+  assert.ok(d.querySelector('#draftModal').classList.contains('hidden'), 'açınca modal kapanmalı');
+  assert.equal(d.querySelector('#title').value, 'VELİ TOPLANTISI', 'açınca başlık geri gelmeli');
+  // sil
+  d.querySelector('#draftsBtn').click();
+  await new Promise((r) => setTimeout(r, 40));
+  d.querySelector('.draft-row [data-act="del"]').click();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(d.querySelectorAll('.draft-row').length, 0, 'silince liste boşalmalı');
+  d.querySelector('#draftClose').click();
 
   if (errors.length) {
     throw new Error('DOM boot hataları:\n' + errors.join('\n'));

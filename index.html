@@ -17,7 +17,8 @@
     <div class="container topbar-in">
       <div class="brand"><span class="brand-mark">🎬</span><span class="brand-name">Veli Mesajı <b>Studio</b></span></div>
       <div class="top-actions">
-        <button type="button" class="chip" id="draftBtn" title="Taslak otomatik kaydedilir; tıklayınca yükler"><span class="chip-ic">⤓</span> Taslak <span class="draft-state" id="draftState"></span></button>
+        <button type="button" class="chip" id="saveDraftBtn" title="Bu duyuruyu taslak olarak kaydet (ses dahil)"><span class="chip-ic">💾</span> Taslağı Kaydet</button>
+        <button type="button" class="chip" id="draftsBtn" title="Kayıtlı taslaklar"><span class="chip-ic">🗂</span> Taslaklar <span class="draft-count" id="draftCount"></span></button>
         <button type="button" class="chip" id="settingsBtn" title="Okul kimliği ayarları"><span class="chip-ic">⚙</span> Ayarlar</button>
       </div>
     </div>
@@ -158,9 +159,8 @@
       <video id="resultVideo" controls playsinline></video>
       <div class="result-time" id="resultTime"></div>
       <div class="result-actions">
-        <button type="button" class="btn primary" id="dlBtn">⬇ MP4 İndir</button>
-        <button type="button" class="btn" id="waBtn">💬 WhatsApp'ta Paylaş</button>
-        <button type="button" class="btn" id="mailBtn">✉ E-posta</button>
+        <button type="button" class="btn primary wide" id="shareBtn">↗ PAYLAŞ</button>
+        <button type="button" class="btn" id="dlBtn">⬇ MP4'ü Kaydet</button>
         <button type="button" class="btn ghost" id="newBtn">+ Yeni Duyuru</button>
       </div>
       <p class="result-note" id="resultNote"></p>
@@ -203,6 +203,47 @@
         <button type="button" class="btn ghost" id="sReset">Varsayılana dön</button>
       </div>
       <button type="button" class="modal-close" id="settingsClose" aria-label="Kapat">✕</button>
+    </div>
+  </div>
+
+  <!-- Paylaşım -->
+  <div class="modal hidden" id="shareModal" role="dialog" aria-modal="true">
+    <div class="modal-content share-box">
+      <h2>Veli mesajını paylaş</h2>
+      <div class="share-video-info">
+        <span class="share-ic">🎬</span>
+        <div class="share-meta-wrap">
+          <div class="share-title" id="shareTitle"></div>
+          <div class="share-meta" id="shareMeta"></div>
+        </div>
+      </div>
+      <ul class="share-checks" id="shareChecks"></ul>
+      <div class="share-ready hidden" id="shareReady">✓ Paylaşıma hazır — <span id="shareReadyInfo"></span></div>
+      <div class="share-grid">
+        <button type="button" class="share-card" id="shareWhatsApp"><span class="share-card-ic">💬</span><span>WhatsApp</span></button>
+        <button type="button" class="share-card" id="shareEmail"><span class="share-card-ic">✉️</span><span>E-posta</span></button>
+      </div>
+      <button type="button" class="btn primary wide" id="shareSystem">↗ Sistemle Paylaş</button>
+      <div class="share-links">
+        <button type="button" class="share-link" id="shareLink">🔗 Bağlantıyı Kopyala</button>
+        <button type="button" class="share-link" id="shareDownload">⬇ MP4'ü İndir</button>
+      </div>
+      <div class="share-status" id="shareStatus"></div>
+      <button type="button" class="modal-close" id="shareClose" aria-label="Kapat">✕</button>
+    </div>
+  </div>
+
+  <!-- Taslaklar -->
+  <div class="modal hidden" id="draftModal" role="dialog" aria-modal="true">
+    <div class="modal-content draft-box">
+      <h2>Taslaklar</h2>
+      <div class="draft-save">
+        <input type="text" id="draftName" maxlength="60" placeholder="Taslak adı (ör. Veli toplantısı taslağı)" autocomplete="off">
+        <button type="button" class="btn primary" id="draftSaveBtn">💾 Taslağı Kaydet</button>
+      </div>
+      <p class="hint-sub" id="draftAudioNote">Ses kaydı taslakla birlikte bu cihazda saklanır (tarayıcı deposu).</p>
+      <div class="draft-list" id="draftList"></div>
+      <button type="button" class="modal-close" id="draftClose" aria-label="Kapat">✕</button>
     </div>
   </div>
 
