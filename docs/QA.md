@@ -94,8 +94,13 @@ gerçek tarayıcıda elle doğrulama önerilir.
 
 ## Kalanlar / bilinen sınırlar
 
-- Mikrofon, MediaRecorder, Web Share, piper örnek dinleme: gerçek cihazda elle
-  doğrulama önerilir (bu ortamda tarayıcı yok).
+- Mikrofon, MediaRecorder, Web Share: gerçek cihazda elle doğrulama önerilir.
+- **Chrome 144+ PNA**: https sayfadan (GitHub Pages) yerel TTS sunucusuna
+  erişim tarayıcı iznine bağlı (`LocalNetworkAccessPermissionDenied` —
+  headless testte kanıtlandı). Çözüm: sunucuyu başlatıp **http://127.0.0.1:8765**
+  adresini açmak (aynı kaynak; izinsiz çalışır). Kurulum ekranında tek tıkla
+  geçiş butonu vardır. Sunucu, PNA preflight başlığını da gönderir
+  (`Access-Control-Allow-Private-Network: true`).
 - Piper ikinci bir ses (Murat/fahrettin) için model dosyası indirmek gerekir —
   sağlayıcı otomatik keşfeder.
 - FFmpeg dönüştürme ilk kullanımda CDN'den ~31 MB indirir (yalnızca Firefox

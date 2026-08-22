@@ -15,6 +15,7 @@ export const TTS_SAMPLE_TEXT =
   'Merhaba! Bu, veli mesajınızda kullanabileceğiniz örnek bir seslendirmedir.';
 
 export const TTS_AUTO_URL = 'http://127.0.0.1:8765';
+export const TTS_LOCALHOST_URL = 'http://localhost:8765';
 
 export class BackendTTSProvider {
   constructor() {
@@ -25,15 +26,17 @@ export class BackendTTSProvider {
   }
 
   /**
-   * Sunucuyu bulur: önce Ayarlar'daki URL, sonra varsayılan 127.0.0.1:8765,
-   * son olarak da aynı köken (siteyi sunucu servis ediyorsa).
+   * Sunucuyu bulur: önce Ayarlar'daki URL, sonra 127.0.0.1:8765 ve
+   * localhost:8765, en son da aynı köken (siteyi sunucu servis ediyorsa).
+   * Her adayın sonucu diagnostics'te tutulur (kurulum ekranı için).
    */
   async discover({ ttsUrl = '', ttsAuto = true } = {}) {
     this.status = 'probing';
     this.error = null;
+    this.diagnostics = [];
     const candidates = [];
     if (ttsUrl && ttsUrl.trim()) candidates.push(ttsUrl.trim().replace(/\/+$/, ''));
-    if (ttsAuto) candidates.push(TTS_AUTO_URL);
+    if (ttsAuto) candidates.push(TTS_AUTO_URL, TTS_LOCALHOST_URL);
     if (typeof location !== 'undefined' && location.protocol.startsWith('http')) candidates.push(location.origin);
 
     const seen = new Set();
@@ -42,7 +45,7 @@ export class BackendTTSProvider {
       seen.add(url);
       try {
         const res = await fetch(url + '/api/tts/voices', {
-          signal: AbortSignal.timeout(1800),
+          signal: AbortSignal.timeout(2500),
         });
         if (res.ok) {
           const data = await res.json();
@@ -51,8 +54,9 @@ export class BackendTTSProvider {
           this.status = 'ok';
           return true;
         }
-      } catch {
-        /* sonraki aday */
+        this.diagnostics.push(`${url} → HTTP ${res.status}`);
+      } catch (err) {
+        this.diagnostics.push(`${url} → ${err && err.name ? err.name : 'hata'}`);
       }
     }
     this.status = 'failed';

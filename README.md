@@ -53,11 +53,17 @@ altında durur.
 ```sh
 pip install -r server/requirements.txt        # edge-tts, piper-tts, pyttsx3
 python server/server.py                       # http://127.0.0.1:8765
+# ya da Windows'ta: start-tts.bat (çift tık)
 ```
 
-Ön yüz, sunucuyu **otomatik bulur** (127.0.0.1:8765 → aynı köken → Ayarlar'daki
-URL). Sunucu yoksa arayüz kurulum yönergesi gösterir; **Ses Kaydı ve Ses Dosyası
-her zaman çalışır.**
+**Önemli (Chrome 144+):** https'teki sayfalardan yerel ağa erişim tarayıcı
+iznine (Private Network Access) bağlandı. Bu yüzden yapay sesler için
+**önerilen yol**: sunucuyu başlatıp **http://127.0.0.1:8765** adresini açın —
+sunucu hem ön yüzü hem TTS API'sini aynı adresten sunar (aynı kaynak;
+izin/CORS/karışık içerik sorunu olmaz). Ön yüz, sunucuyu otomatik bulur
+(127.0.0.1:8765 → localhost:8765 → aynı köken → Ayarlar'daki URL); sunucu
+yoksa kurulum ekranı tek tıkla sunucu sürümüne geçiş sunar. **Ses Kaydı ve
+Ses Dosyası her zaman çalışır.**
 
 ### Çevrimdışı Piper modeli
 

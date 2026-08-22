@@ -38,6 +38,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        # Private Network Access: https'teki ön yüzün http://127.0.0.1'e
+        # istek atabilmesi için preflight yanıtında gerekli (Chrome 130+)
+        self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def _json(self, obj, status=200, extra=None):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")

@@ -19,7 +19,7 @@ import { AudioEngine } from './audio.js';
 import { buildScenes, SCENE_LABEL } from './scenes.js';
 import { StudioRenderer } from './renderer.js';
 import {
-  BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT, PROVIDER_META,
+  BackendTTSProvider, PROVIDER_META,
 } from './tts.js';
 import {
   validateBeforeExport, exportVideo, downloadBlob,
@@ -44,7 +44,6 @@ const state = {
 const audioEngine = new AudioEngine();
 const renderer = new StudioRenderer($('#stage'));
 const tts = new BackendTTSProvider();
-const speech = new BrowserSpeechProvider();
 const draftStore = createDraftStore();
 
 let previewTime = 0;
@@ -721,43 +720,72 @@ async function refreshVoiceStudio() {
     if (!ok) {
       setTtsStatus('');
       renderTtsSetup();
+      startTtsAutoRetry();
       return;
     }
+    stopTtsAutoRetry();
     setTtsStatus('');
     renderVoiceGallery(tts.lastVoices);
   } catch (err) {
     console.error('TTS keşif hatası:', err);
     setTtsStatus('');
     renderTtsSetup();
+    startTtsAutoRetry();
   }
+}
+
+/* Sunucu bağlanana dek kurulum ekranında otomatik yeniden dene (en fazla ~30 sn) */
+let ttsRetryTimer = null;
+let ttsRetryMax = null;
+function startTtsAutoRetry() {
+  stopTtsAutoRetry();
+  ttsRetryTimer = setInterval(() => {
+    if (els.ttsSetup.classList.contains('hidden')) return stopTtsAutoRetry();
+    if (document.visibilityState === 'hidden') return;
+    refreshVoiceStudio();
+  }, 6000);
+  ttsRetryMax = setTimeout(stopTtsAutoRetry, 30000);
+}
+function stopTtsAutoRetry() {
+  if (ttsRetryTimer) {
+    clearInterval(ttsRetryTimer);
+    ttsRetryTimer = null;
+  }
+  if (ttsRetryMax) {
+    clearTimeout(ttsRetryMax);
+    ttsRetryMax = null;
+  }
+}
+
+/* Testler için: arka plan zamanlayıcılarını kapatır */
+export function __stopBackgroundTimers() {
+  stopTtsAutoRetry();
 }
 
 function renderTtsSetup() {
   els.voiceGallery.classList.add('hidden');
   els.ttsSetup.classList.remove('hidden');
+  const diag = (tts.diagnostics || []).join('<br>');
   els.ttsSetup.innerHTML = `
     <div class="setup-ic">🎙</div>
     <h4>Yapay sesler kullanılamıyor</h4>
-    <p>TTS üretimi tarayıcıda değil, <b>yerel TTS sunucusunda</b> yapılır (gizlilik + çevrimdışı Piper desteği).</p>
+    <p>Ön yüz, sesi yerel <b>TTS sunucusuna</b> gönderir (gizlilik + çevrimdışı Piper desteği). Sunucu şu an erişilemiyor.</p>
     <ol class="setup-steps">
       <li><code>pip install -r server/requirements.txt</code></li>
-      <li><code>python server/server.py</code></li>
-      <li>Sayfayı yenileyin — <b>http://127.0.0.1:8765</b> otomatik bulunur</li>
+      <li><code>python server/server.py</code> (ya da <code>start-tts.bat</code>)</li>
+      <li><b>Sunucu sürümünü açın</b> → sesler otomatik bağlanır</li>
     </ol>
-    <p class="setup-note">GitHub Pages'ten kullanıyorsanız sunucuyu Ayarlar → TTS sunucusu bölümünden bağlayın.</p>
     <div class="vc-actions">
+      <button type="button" class="btn btn-sm" id="ttsOpenServer">▶ Sunucu sürümünü aç (önerilir)</button>
       <button type="button" class="btn btn-sm ghost" id="ttsRetry">↻ Yeniden Dene</button>
-      <button type="button" class="btn btn-sm ghost" id="ttsBrowserSample">🔊 Örnek (cihaz sesi)</button>
     </div>
+    <p class="setup-note"><b>Neden?</b> Bu sayfa (GitHub Pages, https) tarayıcının yerel ağ iznini gerektirir. Sunucu sürümü (<code>http://127.0.0.1:8765</code>) ön yüzü ve TTS'i <b>aynı adresten</b> sunar — izin, CORS, karışık içerik sorunu olmaz.</p>
     <p class="setup-note">Sunucu olmadan da <b>Ses Kaydı</b> ve <b>Ses Dosyası</b> sekmeleriyle video üretebilirsiniz.</p>`;
-  $('#ttsRetry').addEventListener('click', refreshVoiceStudio);
-  $('#ttsBrowserSample').addEventListener('click', () => {
-    if (speech.speak(TTS_SAMPLE_TEXT, { onEnd: () => setTtsStatus('') })) {
-      setTtsStatus('sample', '🔊 Örnek cihaz sesiyle okunuyor (yalnızca önizleme — videoya yazılmaz)');
-    } else {
-      toast('Bu cihazda sesli okuma desteklenmiyor.');
-    }
+  $('#ttsOpenServer').addEventListener('click', () => {
+    window.open('http://127.0.0.1:8765', '_blank', 'noopener');
+    setTtsStatus('sample', 'Sunucu sürümü yeni sekmede açılıyor — orada sesler otomatik bağlanır.');
   });
+  $('#ttsRetry').addEventListener('click', refreshVoiceStudio);
 }
 
 function renderVoiceGallery(voices) {

@@ -347,7 +347,11 @@ const { JSDOM, VirtualConsole } = await import('jsdom');
   if (errors.length) {
     throw new Error('DOM boot hataları:\n' + errors.join('\n'));
   }
-  console.log('✓ DOM boot: 5 tasarım + kurulum durumu + hazırlık + sekmeler + şablonlar + temizle');
+  console.log('✓ DOM boot: 5 tasarım + kurulum durumu + hazırlık + sekmeler + şablonlar + temizle + taslaklar');
+
+  // arka plan zamanlayıcılarını kapat (test süreci sonlansın)
+  const mainMod = await import(pathToFileURL(join(root, 'js/main.js')).href);
+  if (typeof mainMod.__stopBackgroundTimers === 'function') mainMod.__stopBackgroundTimers();
 }
 
 /* ---------- 7) Render motoru duman testi (sahte canvas) ---------- */
