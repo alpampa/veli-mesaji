@@ -9,7 +9,7 @@ import io
 import os
 import wave
 
-from .base import TTSProvider, wav_duration
+from .base import TTSProvider, TTSResult, wav_duration, split_sentences
 
 try:
     from piper import PiperVoice
@@ -108,8 +108,8 @@ class PiperProvider(TTSProvider):
 
         import numpy as np
 
-        chunks = [c.audio_float_array for c in voice.synthesize(text)]
-        audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+        chunks = list(voice.synthesize(text))
+        audio = np.concatenate([c.audio_float_array for c in chunks]) if chunks else np.zeros(0, dtype=np.float32)
         pcm = (np.clip(audio, -1, 1) * 32767).astype(np.int16)
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wav_file:
@@ -121,4 +121,64 @@ class PiperProvider(TTSProvider):
         duration = wav_duration(data)
         if duration is None:
             duration = len(pcm) / voice.config.sample_rate
-        return data, duration
+
+        # Kelime zamanlamaları: her kelimenin fonem sayısına göre orantılı
+        # (fonem sayıları gerçek; süre toplam süreye orantılı -> 'approx')
+        words = self._approx_words(voice, text, duration)
+        sentences = self._build_sentences(text, words, duration)
+        return TTSResult(wav=data, duration=duration, words=words, sentences=sentences, timing="approx" if words else None)
+
+    @staticmethod
+    def _approx_words(voice, text, duration):
+        """Fonem sayıları gerçek; süre toplam süreye orantılı (approx)."""
+        try:
+            phonemes = voice.phonemize(text)  # [cümle, [fonem token'ları]] — boşluk = kelime sınırı
+            per_word_counts = []
+            for sentence in phonemes:
+                cur = 0
+                for tok in sentence:
+                    if tok == ' ':
+                        if cur:
+                            per_word_counts.append(cur)
+                            cur = 0
+                    else:
+                        cur += 1
+                if cur:
+                    per_word_counts.append(cur)
+        except Exception:
+            return []
+        if not per_word_counts:
+            return []
+
+        # görünür kelimeler: metin token'ları (okunabilir)
+        import re as _re
+
+        tokens = _re.findall(r"\d+[.:]?\d*|[\wçğıöşüÇĞİÖŞÜ]+(?:['’][\wçğıöşüÇĞİÖŞÜ]+)*", text)
+        if len(tokens) != len(per_word_counts):
+            # fonem sayısı ile token sayısı uyuşmazsa karakter ağırlığı kullan
+            per_word_counts = [max(1, len(t)) for t in tokens]
+        total = sum(per_word_counts)
+        if total <= 0:
+            return []
+        words = []
+        t = 0.0
+        for i, c in enumerate(per_word_counts):
+            seg_dur = (c / total) * duration
+            words.append({"word": tokens[i], "start": round(t, 3), "end": round(t + seg_dur, 3)})
+            t += seg_dur
+        return words
+
+    @staticmethod
+    def _build_sentences(text, words, duration):
+        sentences = []
+        for raw in split_sentences(text):
+            tokens = raw.split()
+            if not tokens:
+                continue
+            first = next((w for w in words if w["word"] == tokens[0]), None)
+            last = next((w for w in reversed(words) if w["word"] == tokens[-1]), None)
+            if first and last:
+                sentences.append({"text": raw, "start": first["start"], "end": last["end"]})
+            else:
+                sentences.append({"text": raw, "start": 0.0, "end": duration})
+        return sentences

@@ -120,7 +120,7 @@ const { BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT } = await mod
   assert.equal(typeof BrowserSpeechProvider.supported(), 'boolean');
   assert.ok(TTS_SAMPLE_TEXT.length > 10, 'örnek metin tanımlı');
 
-  // BackendTTSProvider — fetch stub ile
+  // BackendTTSProvider — fetch stub ile (yeni JSON yanıtı: wavBase64 + words)
   const calls = [];
   globalThis.fetch = async (url, opts) => {
     calls.push([url, opts]);
@@ -139,10 +139,20 @@ const { BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT } = await mod
       assert.equal(opts.method, 'POST');
       const body = JSON.parse(opts.body);
       assert.ok(body.text && body.voice, 'POST gövdesi metin+ses içermeli');
+      const wav = new Uint8Array([0x52, 0x49, 0x46, 0x46, 1, 2, 3]); // RIFF...
+      let bin = '';
+      wav.forEach((b) => { bin += String.fromCharCode(b); });
       return {
         ok: true,
-        blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' }),
-        headers: new Map([['X-Duration', '12.5'], ['X-Provider', 'edge']]),
+        json: async () => ({
+          provider: 'edge',
+          duration: 12.5,
+          contentType: 'audio/mpeg',
+          wavBase64: btoa(bin),
+          words: [{ word: 'Merhaba', start: 0.1, end: 0.6 }],
+          sentences: [{ text: 'Merhaba', start: 0.1, end: 0.6 }],
+          timing: 'word',
+        }),
       };
     }
     throw new Error('beklenmeyen url: ' + url);
@@ -164,8 +174,10 @@ const { BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT } = await mod
 
   const gen = await p2.generate('Merhaba', voices[0].id);
   assert.ok(gen.blob instanceof Blob, 'wav blob dönmeli');
-  assert.equal(gen.duration, 12.5, 'X-Duration başlığı okunmalı');
+  assert.equal(gen.duration, 12.5, 'süre JSON dan okunmali');
   assert.equal(gen.provider, 'edge');
+  assert.equal(gen.words.length, 1, 'kelime zamanlamaları gelmeli');
+  assert.equal(gen.timing, 'word');
 
   // başarısız durum
   globalThis.fetch = async () => ({ ok: false, status: 502, json: async () => ({ error: 'provider_failed' }) });
@@ -174,7 +186,7 @@ const { BackendTTSProvider, BrowserSpeechProvider, TTS_SAMPLE_TEXT } = await mod
     /provider_failed/,
     'sunucu hatası kullanıcıya ulaşmalı'
   );
-  console.log('✓ tts: BackendTTSProvider keşif/voices/generate/başlık/hata + BrowserSpeech');
+  console.log('✓ tts: BackendTTSProvider keşif/voices/generate(JSON+words)/hata + BrowserSpeech');
   void ok; void p;
 }
 
@@ -237,6 +249,69 @@ const { shareFilename, buildShareChecklist, systemShare, shareLinkText } = await
   console.log('✓ share: dosya adı, 40 sn kontrolü, sistem paylaşımı fallback/native');
 }
 
+/* ---------- 5d) MASTER TIMELINE + senkron testi (madde 16) ---------- */
+const {
+  buildMasterTimeline, sceneAt, visiblePhrases, displayText, wordsToPhrases,
+} = await mod('js/timeline.js');
+
+{
+  const TEXT = "Sayın velilerimiz, 25 Eylül Perşembe günü saat 14.30'da okulumuzda veli toplantısı yapılacaktır.";
+  // Gerçek TTS'ten gelebilecek kelime zamanlamaları (saniye)
+  const words = [
+    { word: 'Sayın', start: 0.2, end: 0.6 }, { word: 'velilerimiz', start: 0.6, end: 1.3 },
+    { word: '25', start: 1.5, end: 1.7 }, { word: 'Eylül', start: 1.7, end: 2.1 }, { word: 'Perşembe', start: 2.1, end: 2.7 }, { word: 'günü', start: 2.7, end: 3.0 },
+    { word: 'saat', start: 3.2, end: 3.5 }, { word: "14.30'da", start: 3.5, end: 4.2 },
+    { word: 'okulumuzda', start: 4.4, end: 5.1 },
+    { word: 'veli', start: 5.3, end: 5.6 }, { word: 'toplantısı', start: 5.6, end: 6.4 },
+    { word: 'yapılacaktır', start: 6.6, end: 7.6 },
+  ];
+  const fields = { school: 'Zeynep Kamil İlkokulu', title: 'VELİ TOPLANTISI', body: TEXT, sign: '', date: '25 EYLÜL', time: '14:30', location: 'Okul' };
+  const tl = buildMasterTimeline({ fields, audioDuration: 8, words, timing: 'word' });
+
+  // 1) "Sayın velilerimiz" → title sahnesi (greeting)
+  assert.equal(sceneAt(tl.scenes, 0.9).type, 'title', 'selamlama anında title sahnesi');
+  const titleScene = tl.scenes.find((s) => s.type === 'title');
+  assert.ok(titleScene.phrase && /SAYIN VELİLERİMİZ/.test(titleScene.phrase.display), 'title phrase: ' + (titleScene.phrase && titleScene.phrase.display));
+
+  // 2) "25 Eylül" konuşulurken date sahnesi aktif
+  assert.equal(sceneAt(tl.scenes, 2.2).type, 'date', 'tarih anında date sahnesi');
+
+  // 3) "14.30" konuşulurken time sahnesi aktif
+  assert.equal(sceneAt(tl.scenes, 3.8).type, 'time', 'saat anında time sahnesi');
+
+  // 4) "toplantı" anında event satırı görünür (vurgulu)
+  const msgScene = tl.scenes.find((s) => s.type === 'message');
+  assert.ok(msgScene && msgScene.start <= 5.6, 'mesaj sahnesi event anında başlamalı');
+  const vis = visiblePhrases(tl.phrases, 5.9);
+  const eventLine = vis.find((p) => p.type === 'event');
+  assert.ok(eventLine, 'event satırı görünür olmalı');
+  assert.equal(eventLine.display, 'VELİ TOPLANTISI', 'event satırı başlıkla vurgulanmalı');
+
+  // 5) audio duration ≈ video duration (bitiş kuyruğuyla)
+  const diff = Math.abs(tl.videoDuration - 8);
+  assert.ok(diff <= 3.0, `video süresi sesle uyumlu (video=${tl.videoDuration.toFixed(2)}, fark=${diff.toFixed(2)})`);
+
+  // phrase sıralaması ve zaman aralıkları ardışık
+  tl.scenes.forEach((s, i) => {
+    if (i > 0) assert.ok(s.start >= tl.scenes[i - 1].start, 'sahneler zamanda sıralı');
+  });
+
+  // displayText kuralları
+  assert.equal(displayText({ type: 'time', words: [{ text: "14.30'da" }] }), '14:30');
+  assert.equal(displayText({ type: 'greeting', words: [{ text: 'Sayın' }, { text: 'velilerimiz' }] }), 'SAYIN VELİLERİMİZ');
+
+  console.log('✓ master timeline: greeting→title, tarih→date, saat→time, toplantı→event, süre uyumu');
+}
+
+{
+  // kelime yokken → approx tahmini dağılım (asla "gerçek" gösterilmez)
+  const tl = buildMasterTimeline({ fields: { body: 'Bir cümle. İki cümle. Üç cümle.', title: 'X' }, audioDuration: 9, words: null, timing: null });
+  assert.equal(tl.timing, 'approx');
+  assert.ok(tl.phrases.length >= 3, 'cümle bazlı satırlar');
+  assert.ok(Math.abs(tl.videoDuration - 9) <= 3.5, 'approx süre uyumu');
+  console.log('✓ master timeline: kelime yokken approx (dürüst etiket)');
+}
+
 /* ---------- 6) DOM boot testi (jsdom) ---------- */
 const { JSDOM, VirtualConsole } = await import('jsdom');
 
@@ -283,7 +358,7 @@ const { JSDOM, VirtualConsole } = await import('jsdom');
   // TTS sunucusu yok -> kurulum durumu gösterilmeli (sahte ses kartı OLMAZ)
   assert.ok(d.querySelector('#ttsSetup') && !d.querySelector('#ttsSetup').classList.contains('hidden'), 'TTS kurulum durumu gösterilmeli');
   assert.equal(d.querySelectorAll('.voice-card').length, 0, 'sunucu yokken sahte ses kartı olmamalı');
-  assert.equal(d.querySelectorAll('#readiness .ri').length, 3, '3 hazırlık maddesi');
+  assert.equal(d.querySelectorAll('#readiness .ri').length, 4, '4 hazırlık maddesi (ses, onay, iletişim, zamanlama)');
   assert.ok(d.querySelector('#generateBtn').disabled, 'üretim butonu başlangıçta engelli');
   // demo önizleme çalışıyor (boş durum kapalı, demo notu görünür)
   assert.ok(d.querySelector('#stageEmpty').classList.contains('hidden'), 'demo açıkken boş durum gizli');
@@ -362,6 +437,7 @@ const { VIDEO_TEMPLATES: VT, TEMPLATE_ORDER: TO, DEFAULT_FIELDS: DF } = await mo
   class MiniCtx {
     save() {} restore() {} clearRect() {} fillRect() {} beginPath() {} moveTo() {} lineTo() {}
     arc() {} arcTo() {} closePath() {} stroke() {} fill() {} translate() {} scale() {} drawImage() {}
+    rect() {} clip() {}
     createLinearGradient() { return { addColorStop() {} }; }
     createRadialGradient() { return { addColorStop() {} }; }
     measureText(t) { return { width: String(t || '').length * 12 }; }
@@ -373,23 +449,23 @@ const { VIDEO_TEMPLATES: VT, TEMPLATE_ORDER: TO, DEFAULT_FIELDS: DF } = await mo
 
   for (const id of TO) {
     r.setTemplate(VT[id]);
-    r.setFields({
+    const fields = {
       school: 'Zeynep Kamil İlkokulu', title: 'VELİ TOPLANTISI',
       date: '25 EYLÜL', time: '14:30', location: 'Konferans Salonu',
       body: 'Değerli velilerimiz, toplantımıza hepiniz davetlisiniz.\nİkinci satır da gelsin.',
       sign: 'Sınıf Öğretmeni',
-    });
+    };
+    r.setFields(fields);
     r.setLogo({}); // drawImage yolu
-    const { scenes, videoDuration } = buildScenes(28, {
-      hasDate: true, hasTime: true, hasLocation: true, hasBody: true,
-    });
-    r.setScenes({ scenes, videoDuration });
-    const times = [0.001, ...scenes.map((s) => (s.start + s.end) / 2), videoDuration - 0.2, videoDuration + 0.2];
+    const tl = buildMasterTimeline({ fields, audioDuration: 28, words: null, timing: 'approx' });
+    r.setScenes({ scenes: tl.scenes, videoDuration: tl.videoDuration });
+    r.setTimeline({ phrases: tl.phrases });
+    const times = [0.001, ...tl.scenes.map((s) => (s.start + s.end) / 2), tl.videoDuration - 0.2, tl.videoDuration + 0.2];
     for (const t of times) {
       assert.doesNotThrow(() => r.renderFrame(t), `renderFrame(${t}) — ${id}`);
     }
   }
-  console.log('✓ renderer: 5 şablon × 7 sahne × zaman noktaları hatasız çiziyor');
+  console.log('✓ renderer: 5 şablon × master timeline × zaman noktaları hatasız çiziyor');
 }
 
 console.log('\nTÜM TESTLER GEÇTİ ✅');

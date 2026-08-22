@@ -39,7 +39,7 @@ def get_voices():
 
 
 def generate(text, voice_id):
-    """voice_id: 'provider:shortname' biçimindedir."""
+    """voice_id: 'provider:shortname' biçimindedir. TTSResult döner."""
     provider_part = voice_id.split(":", 1)[0]
     for p in PROVIDERS:
         if p.id == provider_part:

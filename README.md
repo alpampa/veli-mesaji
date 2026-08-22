@@ -80,6 +80,25 @@ görünür (ör. `tr_TR-fahrettin-medium` → erkek ses).
 
 ## Özellikler
 
+### Master Timeline + gerçek TTS zamanlaması
+- TTS, sesle birlikte **zamanlama** döndürür: Edge-TTS **gerçek cümle sınırları**
+  (SentenceBoundary) + cümle içi kelime dağılımı; Piper **gerçek fonem sayılarıyla**
+  orantılı; Windows orantılı — hepsi `timing: word|sentence|approx` olarak dürüstçe
+  etiketlenir, asla sahte "gerçek" gösterilmez
+- `js/timeline.js` → **Master Timeline**: kelime zamanlamaları anlamlı phrase'lere
+  dönüşür (selamlama/tarih/saat/yer/etkinlik); sahne sınırları bu zamanlara bağlanır:
+  "Sayın velilerimiz" dediğinde **SAYIN VELİLERİMİZ**, "25 Eylül" dediğinde tarih
+  sahnesi, "14.30" dediğinde saat sahnesi, "toplantı" dediğinde vurgulu satır
+- Preview, timeline ve final MP4 **aynı Master Timeline'ı** kullanır; tek saat
+  `audio.currentTime`'tır (play/pause/seek/replay birlikte senkron)
+
+### Motion engine
+- Yavaş kamera push'u + paralaks sürüklenme (şablon başına `camera`), masked
+  typography reveal, blur-to-sharp, light sweep (wipe geçişi), cinematic dissolve,
+  **ses seviyesine hafif tepki** (arka plan ışığı; analyser, sakin/premium)
+- 5 template: **Sinematik · Editoryal · Modern · Sıcak Okul · Etkinlik** — her biri
+  arka plan, kamera, geçiş ve renk sistemiyle
+
 ### Sinematik önizleme (ürünün kalbi)
 - Açılışta **otomatik oynayan demo sahne**: dağ siluetleri, ışık huzmesi, sis,
   vinyet — prosedürel çizilir, harici görsele bağımlı değil
@@ -95,6 +114,21 @@ görünür (ör. `tr_TR-fahrettin-medium` → erkek ses).
 ### Timeline + dalga formu
 - Gerçek ses dosyasından üretilen **waveform**
 - Sahne segmentleri, zaman cetveli, oynatma kafası; sahneye tıklayınca atlama
+
+### Kalite kontrolü (üretim öncesi)
+- ✓ ses var · ✓ ≤40 sn · ✓ metin↔ses onayı · ✓ zamanlama bilgisi
+- Yapay ses kullanıldıysa **kelime zamanlaması zorunlu**: backend zamanlama
+  döndürmezse üretim engellenir (sorun gizlenmez); Kayıt/Dosya için tahmini
+  zamanlama kullanılır ve "≈ yaklaşık" olarak gösterilir
+
+### Web mimarisi
+- Frontend GitHub Pages'te; TTS backend **ayrı servis** olarak çalışabilir:
+  `POST /api/tts` (JSON: wavBase64 + words/sentences/timing), `GET /api/voices`,
+  `GET /api/health`
+- **CORS** env ile sınırlanabilir: `VMS_ALLOWED_ORIGINS=https://alpampa.github.io`;
+  **API anahtarı**: `VMS_API_KEY` → frontend `X-API-Key` gönderir (Ayarlar →
+  API anahtarı; JS kaynağına gömülmez)
+- Production HTTPS için Caddy/Cloudflare proxy yönergesi README alt kısmında
 
 ### 40 saniye kuralı (hard limit)
 - Yazarken `72 kelime ≈ 27 sn` tahmini; üretimde gerçek `00:31.4`
@@ -127,8 +161,9 @@ görünür (ör. `tr_TR-fahrettin-medium` → erkek ses).
 index.html / styles.css       arayüz (Content | Preview+Timeline | Voice)
 js/main.js                    durum, paneller, demo, üretim akışı
 js/renderer.js                1080×1920 sahne çizim motoru (sinematik arka planlar)
-js/scenes.js                  sahne dağıtımı (ses süresine göre)
-js/audio.js                   AudioEngine — decode, oynatma, dalga formu
+js/scenes.js                  sahne dağıtımı (tahmini yedek)
+js/timeline.js                MASTER TIMELINE + phrase motoru (gerçek zamanlamalar)
+js/audio.js                   AudioEngine — decode, oynatma, dalga formu, analyser
 js/tts.js                     BackendTTSProvider + BrowserSpeechProvider
 js/exporter.js                doğrulama + MediaRecorder MP4 + FFmpeg yedek
 js/drafts.js                  taslak deposu (IndexedDB + bellek yedeği, ses dahil)
@@ -143,12 +178,12 @@ docs/QA.md                    buton/özellik denetim tablosu
 ## Testler
 
 ```sh
-npm test                       # sahne/doğrulama/tasarım + DOM + render motoru
-python tests/server_test.py    # servis mantığı + wav süresi
+npm test                       # master timeline senkron testi dahil (madde 16)
+python tests/server_test.py    # servis mantığı + CANLI edge/piper zamanlama testleri
 ```
 
-Canlı sunucu doğrulamaları (bu makinede yapıldı): Edge-TTS ✓, Piper ✓,
-Windows SAPI ✓ — üçü de gerçek ses üretti.
+Gerçek tarayıcıda (headless Chrome) doğrulandı: TTS üretimi → önizleme
+play → `audio.currentTime` ilerliyor, canvas kareleri sesle birlikte değişiyor.
 
 ## Yerel çalıştırma
 

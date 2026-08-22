@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 
-from .base import TTSProvider, wav_duration
+from .base import TTSProvider, TTSResult, wav_duration, split_sentences
 
 try:
     import pyttsx3
@@ -144,4 +144,22 @@ class WindowsProvider(TTSProvider):
         duration = wav_duration(data)
         if duration is None:
             duration = len(data) / 22050.0
-        return data, duration
+        # Windows SAPI kelime zamanlaması vermez -> yaklaşık (kelime sayısı oranı)
+        tokens = [t for t in text.split() if t.strip()]
+        words = []
+        if tokens:
+            per = duration / len(tokens)
+            for i, tok in enumerate(tokens):
+                words.append({"word": tok, "start": round(i * per, 3), "end": round((i + 1) * per, 3)})
+        sentences = []
+        for raw in split_sentences(text):
+            tokens_s = raw.split()
+            if not tokens_s:
+                continue
+            first = next((w for w in words if w["word"] == tokens_s[0]), None)
+            last = next((w for w in reversed(words) if w["word"] == tokens_s[-1]), None)
+            if first and last:
+                sentences.append({"text": raw, "start": first["start"], "end": last["end"]})
+            else:
+                sentences.append({"text": raw, "start": 0.0, "end": duration})
+        return TTSResult(wav=data, duration=duration, words=words, sentences=sentences, timing="approx" if words else None)

@@ -23,6 +23,17 @@ export class BackendTTSProvider {
     this.status = 'idle'; // idle | probing | ok | failed
     this.error = null;
     this.lastVoices = [];
+    this.apiKey = ''; // opsiyonel X-API-Key (kullanıcı ayarlardan girer; JS'e gömülmez)
+  }
+
+  _headers(extra = {}) {
+    const h = { 'Content-Type': 'application/json', ...extra };
+    if (this.apiKey) h['X-API-Key'] = this.apiKey;
+    return h;
+  }
+
+  setApiKey(key) {
+    this.apiKey = (key || '').trim();
   }
 
   /**
@@ -46,6 +57,7 @@ export class BackendTTSProvider {
       try {
         const res = await fetch(url + '/api/tts/voices', {
           signal: AbortSignal.timeout(2500),
+          headers: this.apiKey ? { 'X-API-Key': this.apiKey } : undefined,
         });
         if (res.ok) {
           const data = await res.json();
@@ -76,14 +88,14 @@ export class BackendTTSProvider {
   }
 
   /**
-   * @returns {Promise<{blob:Blob, duration:number|null, provider:string}>}
+   * @returns {Promise<{blob:Blob, duration:number, provider:string, words:Array, sentences:Array, timing:string|null}>}
    */
   async generate(text, voiceId, onProgress) {
     if (!this.baseUrl) throw new Error('TTS sunucusu bağlı değil.');
     onProgress && onProgress(0.15);
     const res = await fetch(this.baseUrl + '/api/tts', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this._headers(),
       body: JSON.stringify({ text, voice: voiceId }),
     });
     if (!res.ok) {
@@ -94,10 +106,21 @@ export class BackendTTSProvider {
       } catch { /* yok say */ }
       throw new Error(msg);
     }
-    const blob = await res.blob();
+    const data = await res.json();
     onProgress && onProgress(1);
-    const duration = parseFloat(res.headers.get('X-Duration')) || null;
-    return { blob, duration, provider: res.headers.get('X-Provider') || 'backend' };
+    if (!data.wavBase64) throw new Error('Sunucu ses verisi döndürmedi.');
+    const binary = atob(data.wavBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: data.contentType || 'audio/wav' });
+    return {
+      blob,
+      duration: data.duration ?? null,
+      provider: data.provider || 'backend',
+      words: Array.isArray(data.words) ? data.words : [],
+      sentences: Array.isArray(data.sentences) ? data.sentences : [],
+      timing: data.timing || null,
+    };
   }
 }
 

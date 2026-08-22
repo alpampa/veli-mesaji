@@ -196,6 +196,9 @@
           <button type="button" class="btn btn-sm ghost" id="sTtsTest">Bağlantıyı test et</button>
           <span class="tts-test-result" id="sTtsResult"></span>
         </div>
+        <label for="sApiKey">API anahtarı (sunucuda tanımlıysa, X-API-Key)</label>
+        <input type="password" id="sApiKey" placeholder="VMS_API_KEY değeri" autocomplete="off">
+        <span class="hint-sub">Anahtar yalnızca bu tarayıcıda saklanır; JavaScript kaynağına gömülmez. Yerel sunucuda gerekmez.</span>
         <span class="hint-sub">Yapay sesler bu sunucu üzerinden üretilir: <code>pip install -r server/requirements.txt</code> → <code>python server/server.py</code></span>
       </div>
       <div class="settings-actions">

@@ -10,6 +10,8 @@ export class AudioEngine {
     this._playing = false;
     this._onEnd = null;
     this._sink = null;
+    this.analyser = null;
+    this._analyserData = null;
   }
 
   async init() {
@@ -50,12 +52,36 @@ export class AudioEngine {
    * Ses çalar. sink verilirse yalnızca o düğüme bağlanır (dışa aktarma için),
    * verilmezse hoparlöre.
    */
+  /** Ses seviyesi tepkisi için analizör (audio-reactive motion) */
+  startAnalyser() {
+    if (!this.ctx || this.analyser) return;
+    const a = this.ctx.createAnalyser();
+    a.fftSize = 256;
+    a.smoothingTimeConstant = 0.6;
+    this.analyser = a;
+    this._analyserData = new Uint8Array(a.frequencyBinCount);
+  }
+
+  /** 0..1 arası sakinleştirilmiş seviye (orta band) */
+  getLevel() {
+    if (!this.analyser || !this._analyserData) return 0;
+    this.analyser.getByteFrequencyData(this._analyserData);
+    let sum = 0;
+    for (let i = 2; i < 26; i++) sum += this._analyserData[i];
+    return Math.min(1, (sum / (24 * 255)) * 2.6);
+  }
+
   play({ offset = 0, sink = null, onEnd = null } = {}) {
     this.stop();
     if (!this.buffer || !this.ctx) return;
     const src = this.ctx.createBufferSource();
     src.buffer = this.buffer;
-    src.connect(sink || this.ctx.destination);
+    if (this.analyser) {
+      src.connect(this.analyser);
+      this.analyser.connect(sink || this.ctx.destination);
+    } else {
+      src.connect(sink || this.ctx.destination);
+    }
     const startAt = this.ctx.currentTime;
     src.start(startAt, Math.min(offset, this.buffer.duration));
     this.source = src;
