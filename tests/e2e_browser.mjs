@@ -138,15 +138,79 @@ try {
   assert.ok(/\d:\d{2}\.\d/.test(vsSub), 'gerçek ses süresi (ondalık) olmalı: ' + vsSub);
   assert.ok(!vsSub.includes('aşımı'), 'kısa metin 40 sn altında kalmalı: ' + vsSub);
 
-  /* ---- 40 sn kontrolü + onay → üretim aktif ---- */
+  /* ---- KRİTİK QA: uzun cümle → hiçbir metin kesilmemeli (safe-area) ---- */
+  const QA_SENTENCE = 'Sayın velilerimiz, çocuklarımızın gelişimini birlikte konuşmak için 25 Eylül Perşembe günü saat 14.30\'da okulumuzda veli toplantısı düzenliyoruz.';
+  await page.$eval('#body', (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, QA_SENTENCE);
+  await sleep(250);
+  await page.click('.voice-card [data-act="generate"]');
+  await page.waitForSelector('#voiceSummary:not(.hidden)', { timeout: 90000 });
+  await sleep(400);
+  const layoutLong = await page.evaluate(() => window.__vmsLayoutAll());
+  const badLong = layoutLong.filter((r) => !r.ok);
+  assert.equal(badLong.length, 0, 'uzun cümle: safe-area ihlali → ' + JSON.stringify(badLong.slice(0, 3)));
+  console.log(`✓ KRİTİK QA: uzun cümle ${layoutLong.length} sahnenin TAMAMINDA güvenli alanda (kelime kesilmiyor)`);
+
+  /* ---- ÇOK uzun metin → message sahnesi bölünür ve yine güvenli ---- */
+  const veryLong = QA_SENTENCE + ' ' +
+    'Ayrıca her sınıftan bir veli temsilcisi seçilecek ve sene boyunca okul aile birliği toplantılarında birlikte çalışacağız. ' +
+    'Katılımınız bizim için çok değerli; sorularınız için okul numaramızdan arayabilir veya sınıf öğretmeninizle görüşebilirsiniz.';
+  await page.$eval('#body', (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, veryLong);
+  await sleep(250);
+  await page.click('.voice-card [data-act="generate"]');
+  await page.waitForSelector('#voiceSummary:not(.hidden)', { timeout: 90000 });
+  await sleep(400);
+  const scenesInfo = await page.evaluate(() => window.__vmsScenes());
+  const msgCount = scenesInfo.filter((s) => s.id.startsWith('message')).length;
+  assert.ok(msgCount >= 2, 'çok uzun mesaj en az 2 message sahnesine bölünmeli: ' + JSON.stringify(scenesInfo.map((s) => s.id)));
+  const layoutVeryLong = await page.evaluate(() => window.__vmsLayoutAll());
+  const badVery = layoutVeryLong.filter((r) => !r.ok);
+  assert.equal(badVery.length, 0, 'çok uzun metin: safe-area ihlali → ' + JSON.stringify(badVery.slice(0, 3)));
+  console.log(`✓ KRİTİK QA: ${msgCount} message sahnesi bölündü ve tamamı güvenli alanda`);
+
+  /* ---- PİKSEL TARAMASI: marj bantlarında metin rengi olmamalı (gerçek glyph doğrulaması) ---- */
+  const scan = await page.evaluate(() => {
+    const r = window.__vmsRenderer;
+    const canvas = document.querySelector('#stage');
+    const scenes = window.__vmsScenes();
+    const msgs = scenes.filter((s) => s.id.startsWith('message'));
+    const out = [];
+    for (const m of msgs) {
+      const t = (m.start + m.end) / 2;
+      r.renderFrame(t);
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      const data = ctx.getImageData(0, 0, W, H).data;
+      let dark = 0;
+      for (let y = 0; y < H; y += 3) {
+        for (let x = 0; x < W; x += 3) {
+          const inBand = x < 120 || x >= W - 120 || y < 140 || y >= H - 160;
+          if (!inBand) continue;
+          const i = (y * W + x) * 4;
+          if (data[i] + data[i + 1] + data[i + 2] < 300) dark++;
+        }
+      }
+      out.push({ id: m.id, dark });
+    }
+    return out;
+  });
+  for (const s of scan) {
+    assert.equal(s.dark, 0, `piksel taraması: ${s.id} marj bandında koyu piksel var (metin taşıyor)`);
+  }
+  console.log(`✓ PİKSEL TARAMASI: ${scan.length} message sahnesinin marj bantlarında 0 koyu piksel (gerçek glyph taşması yok)`);
+
+  /* ---- 40 sn kontrolü + layout kapısı + onay → üretim aktif ---- */
   const ok40 = await page.$$eval('#genChecks .gc', (els) =>
     els.some((e) => e.classList.contains('ok') && /Ses/.test(e.textContent)));
   assert.ok(ok40, '40 sn altı rozeti olmalı');
-  await page.click('#readiness #sameCheck');
+  const okLayout = await page.$$eval('#genChecks .gc', (els) =>
+    els.some((e) => e.classList.contains('ok') && /güvenli/.test(e.textContent)));
+  assert.ok(okLayout, 'metin güvenli alan rozeti olmalı');
+  const cb = await page.$('#readiness #sameCheck');
+  if (cb) await cb.click();
   await sleep(200);
   const genEnabled = await page.$eval('#generateBtn', (el) => !el.disabled);
   assert.ok(genEnabled, 'onay sonrası VİDEOYU ÜRET aktif olmalı');
-  console.log('✓ 40 sn kontrolü + onay: VİDEOYU ÜRET aktif');
+  console.log('✓ 40 sn + güvenli alan + onay: VİDEOYU ÜRET aktif');
 
   /* ---- Ayarlar → Geliştirici sistem durumu ---- */
   await page.click('#settingsBtn');

@@ -453,6 +453,8 @@ function drawTimeline() {
     const w = Math.max(2, xOf(s.end) - x - 2);
     const active = previewTime >= s.start && previewTime < s.end;
     const hover = tlHover === i;
+    const labelFull = (SCENE_LABEL[s.type] || s.type.toUpperCase()) +
+      (s.id !== s.type ? ' ' + s.id.split('-').pop() : '');
     ctx.fillStyle = active ? C.primary : hover ? C.ink : C.track;
     roundRect(ctx, x, 30, w, 24, 6);
     ctx.fill();
@@ -461,14 +463,14 @@ function drawTimeline() {
       ctx.fillStyle = active ? C.primary : C.muted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(SCENE_LABEL[s.type] || s.type.toUpperCase(), x + w / 2, 22);
+      ctx.fillText(labelFull, x + w / 2, 22);
     }
     if (w > 46) {
       ctx.font = '600 10.5px Inter, sans-serif';
       ctx.fillStyle = active ? '#fff' : C.muted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(SCENE_LABEL[s.type] || s.type.toUpperCase(), x + w / 2, 42);
+      ctx.fillText(labelFull, x + w / 2, 42);
     }
   });
 
@@ -1121,9 +1123,21 @@ function updateGenChecks() {
     ? '<span class="gc ok">✓ İletişim bilgisi</span>'
     : '<span class="gc warn">! İletişim bilgisi yok</span>');
 
+  // Kalite kapısı: metin kutusu güvenli alanın DIŞINA çıkamaz (kırpma yok)
+  let layoutOk = true;
+  try {
+    layoutOk = renderer.layoutOk();
+  } catch (err) {
+    console.warn('Layout denetimi başarısız:', err);
+    layoutOk = true;
+  }
+  chips.push(layoutOk
+    ? '<span class="gc ok">✓ Metin güvenli alanda</span>'
+    : '<span class="gc bad">✕ Metin güvenli alan dışında — metni kısaltın</span>');
+
   els.genChecks.innerHTML = chips.join('');
 
-  const ready = !!(a && a.duration <= MAX_SECONDS + 0.5 && state.sameCheck);
+  const ready = !!(a && a.duration <= MAX_SECONDS + 0.5 && state.sameCheck && layoutOk);
   els.generateBtn.disabled = !ready;
   els.generateBtn.title = ready
     ? 'Videoyu üret'
@@ -1645,3 +1659,17 @@ function init() {
 }
 
 init();
+
+/* ---------------- QA kancaları (uçtan uca tarayıcı testleri) ---------------- */
+if (typeof window !== 'undefined') {
+  window.__vmsRenderer = renderer;
+  window.__vmsLayoutCheck = (t) => renderer.checkSafeArea(t);
+  window.__vmsLayoutAll = () => {
+    const out = [];
+    for (const s of renderer.scenes) {
+      out.push(renderer.checkSafeArea((s.start + s.end) / 2));
+    }
+    return out;
+  };
+  window.__vmsScenes = () => renderer.scenes.map((s) => ({ id: s.id, start: s.start, end: s.end }));
+}

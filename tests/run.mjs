@@ -312,6 +312,77 @@ const {
   console.log('✓ master timeline: kelime yokken approx (dürüst etiket)');
 }
 
+{
+  // ÇOK uzun mesaj → message sahnesi güvenli alan için birden fazla sahneye bölünür
+  const longBody = 'Birinci cümle içerik kelimeleri. İkinci cümle içerik kelimeleri. Üçüncü cümle içerik kelimeleri. Dördüncü cümle içerik kelimeleri. Beşinci cümle içerik kelimeleri. Altıncı cümle içerik kelimeleri. Yedinci cümle içerik kelimeleri. Sekizinci cümle içerik kelimeleri.';
+  const tl = buildMasterTimeline({ fields: { body: longBody, title: 'X', date: '', time: '', location: '' }, audioDuration: 30, words: null, timing: 'approx' });
+  const msgScenes = tl.scenes.filter((s) => s.type === 'message');
+  assert.ok(msgScenes.length >= 2, `uzun mesaj en az 2 message sahnesine bölünmeli (${msgScenes.length})`);
+  for (const s of msgScenes) {
+    assert.ok(s.phrases && s.phrases.length <= 4, `sahne başına satır sınırı (${s.id}: ${s.phrases.length})`);
+    assert.ok(s.start < s.end, 'sahne süresi pozitif');
+  }
+  // sahneler zamanda sıralı ve çakışmasız
+  for (let i = 1; i < msgScenes.length; i++) {
+    assert.ok(msgScenes[i].start >= msgScenes[i - 1].end - 0.01, 'message sahneleri sıralı');
+  }
+  console.log(`✓ master timeline: uzun mesaj ${msgScenes.length} sahneye bölündü (satır/sahne ≤ 4)`);
+}
+
+/* ---------- 5b) textfit: asla kırpmayan layout motoru ---------- */
+const { fitBlock, wrapLinesStrict, blockBox, withinSafe, SAFE } = await mod('js/textfit.js');
+
+{
+  // gerçekçi font ölçümü: genişlik ≈ karakter × 0.62 × boyut
+  let font = '600 40px Inter, sans-serif';
+  const ctx = {
+    set font(v) { font = v; },
+    get font() { return font; },
+    measureText(t) {
+      const m = /(\d+)px/.exec(font);
+      const size = m ? +m[1] : 40;
+      return { width: String(t || '').length * size * 0.62 };
+    },
+  };
+
+  // normal paragraf: satırlar maxWidth içinde, yükseklik maxHeight içinde
+  const f1 = fitBlock(ctx, 'Değerli velilerimiz, çocuklarımızın gelişimini birlikte konuşmak için toplantımıza hepinizi bekliyoruz.', { maxWidth: 840, maxHeight: 600, base: 44, min: 22, lineHeight: 1.5 });
+  assert.equal(f1.overflow, false, 'normal paragraf sığmalı');
+  for (const l of f1.lines) {
+    ctx.font = `600 ${f1.size}px Inter, sans-serif`;
+    assert.ok(ctx.measureText(l).width <= 840.5, `satır genişliği ≤ maxWidth (${ctx.measureText(l).width.toFixed(1)})`);
+  }
+  assert.ok(f1.height <= 600.5, 'blok yüksekliği ≤ maxHeight');
+
+  // tek kelime bile maxWidth'ten genişse: font küçültür / güvenli karakter kırması — ASLA taşma yok
+  const wide = 'ÇOKUZUNBİRKELİME'.repeat(4);
+  const f2 = fitBlock(ctx, wide, { maxWidth: 200, maxHeight: 400, base: 60, min: 14, lineHeight: 1.3 });
+  for (const l of f2.lines) {
+    ctx.font = `600 ${f2.size}px Inter, sans-serif`;
+    assert.ok(ctx.measureText(l).width <= 200.5, `kırık satır genişliği ≤ maxWidth (${ctx.measureText(l).width.toFixed(1)})`);
+  }
+  assert.ok(f2.lines.length >= 4, 'uzun kelime parçalara bölünür');
+
+  // çok küçük kutu → overflow işareti (kırpma değil, dürüst işaret)
+  const f3 = fitBlock(ctx, 'Değerli velilerimiz hepinizi bekliyoruz lütfen katılımınızı onaylayın ve erken gelmeyi unutmayın.', { maxWidth: 120, maxHeight: 60, base: 40, min: 10, lineHeight: 1.4 });
+  assert.equal(f3.overflow, true, 'imkânsız kutu overflow işaretler');
+  // ama yine de hiçbir satır maxWidth'i aşmaz
+  for (const l of f3.lines) {
+    ctx.font = `600 ${f3.size}px Inter, sans-serif`;
+    assert.ok(ctx.measureText(l).width <= 120.5, 'overflow durumunda bile satır genişliği korunur');
+  }
+
+  // blockBox + withinSafe: ortalanmış kutu güvenli alanda, taşan kutu yakalanır
+  const b1 = blockBox(f1, { x: 540, y: 700, align: 'center' });
+  assert.ok(withinSafe(b1), 'ortalanmış kutu güvenli alanda');
+  const b2 = blockBox(f1, { x: 1080, y: 700, align: 'center' });
+  assert.ok(!withinSafe(b2), 'ekran dışı kutu yakalanır');
+  assert.equal(SAFE.left, 120);
+  assert.equal(SAFE.right, 120);
+
+  console.log('✓ textfit: kelime sar + font küçült + karakter kırması + overflow işareti + safe-area kutusu');
+}
+
 /* ---------- 6) DOM boot testi (jsdom) ---------- */
 const { JSDOM, VirtualConsole } = await import('jsdom');
 

@@ -27,6 +27,16 @@ export const PHRASE_RULES = {
 
 const DISPLAY_STRIP = /(?:'|\u2019)?(da|de|dan|den|nın|nin|nun|nün|na|ne|yı|yi|yu|yü|dır|dir|dur|dür)$/i;
 
+/* Mesaj sahnesi güvenli alan garantisi: bir sahnede en fazla bu kadar phrase
+ * gösterilir; fazlası 'message-2', 'message-3'… sahnelerine bölünür. */
+export const MAX_MSG_PHRASES = 6;
+
+export function chunkLines(arr, n) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
 export function normalizeWord(w) {
   return (w || '')
     .toLocaleLowerCase('tr-TR')
@@ -139,9 +149,9 @@ export function buildMasterTimeline({ fields, audioDuration, words, timing = nul
 
   const pad = 0.25;
   const scenes = [];
-  const push = (type, start, end) => {
+  const push = (type, start, end, id) => {
     const dur = Math.max(0.3, end - start);
-    scenes.push({ id: type, type, start, end: start + dur, dur, animation: type });
+    scenes.push({ id: id || type, type, start, end: start + dur, dur, animation: type });
   };
 
   // intro: ses başlamadan önce okul kimliği
@@ -178,18 +188,34 @@ export function buildMasterTimeline({ fields, audioDuration, words, timing = nul
     specialPhrases.push(p);
   }
 
-  // message: kalan phrase'ler (event dahil) — satırlar phrase zamanlarıyla belirir
+  // message: kalan phrase'ler (event dahil) — satırlar phrase zamanlarıyla belirir.
+  // ÇOK UZUNSA güvenli alan garantisi için birden fazla message sahnesine bölünür.
   const linePhrases = phrases.filter(
     (p) => !specialPhrases.includes(p) && p.type !== 'greeting' && p !== greeting,
   );
   // özel sahnelerden (date/time/location) SONRA başlar; erken bağlaç kelimeler
   // burada anında belirir, vurgulu öğeler yine kendi zamanlarında açılır
   const msgStart = cursor;
-  const msgEnd = Math.max(...linePhrases.map((p) => p.end), last.end) + 0.35;
-  push('message', msgStart, msgEnd);
-  scenes.find((s) => s.type === 'message').phrases = linePhrases;
+  const chunks = chunkLines(linePhrases, MAX_MSG_PHRASES);
+  if (chunks.length === 0) {
+    push('message', msgStart, msgStart + 0.6);
+    scenes.find((s) => s.type === 'message').phrases = [];
+  } else {
+    let mCursor = msgStart;
+    chunks.forEach((chunk, ci) => {
+      const chEnd = Math.max(...chunk.map((p) => p.end)) + 0.35;
+      const start = Math.max(mCursor, chunk[0].start);
+      const end = Math.max(chEnd, start + 0.8);
+      const id = ci === 0 ? 'message' : 'message-' + (ci + 1);
+      push('message', start, end, id);
+      scenes.find((s) => s.id === id).phrases = chunk;
+      mCursor = end;
+    });
+  }
 
-  // outro
+  // outro — son message sahnesinden sonra
+  const lastMsg = scenes.filter((s) => s.type === 'message').pop();
+  const msgEnd = lastMsg ? lastMsg.end : msgStart;
   push('outro', msgEnd, msgEnd + 1.8);
 
   const videoDuration = scenes[scenes.length - 1].end + 0.5;
@@ -207,7 +233,9 @@ function estimateTimeline({ fields, audioDuration }) {
   const hasTime = !!(fields.time || '').trim();
   const hasLocation = !!(fields.location || '').trim();
   const hasBody = !!(fields.body || '').trim();
-  const { scenes, videoDuration } = buildScenes(audioDuration, { hasDate, hasTime, hasLocation, hasBody });
+  const built = buildScenes(audioDuration, { hasDate, hasTime, hasLocation, hasBody });
+  let scenes = built.scenes;
+  let videoDuration = built.videoDuration;
 
   // mesaj satırları: cümle/paragraf — tahmini zamanlama (satır sayısına göre)
   const rawLines = (fields.body || '')
@@ -218,17 +246,31 @@ function estimateTimeline({ fields, audioDuration }) {
   const lines = [];
   if (msgScene && rawLines.length) {
     const per = msgScene.dur / rawLines.length;
-    rawLines.forEach((text, i) => {
-      lines.push({
-        type: 'message',
-        text,
-        display: text,
-        start: msgScene.start + i * per,
-        end: msgScene.start + (i + 1) * per,
-        words: [],
-        approx: true,
-      });
+    const all = rawLines.map((text, i) => ({
+      type: 'message',
+      text,
+      display: text,
+      start: msgScene.start + i * per,
+      end: msgScene.start + (i + 1) * per,
+      words: [],
+      approx: true,
+    }));
+    lines.push(...all);
+    // orijinal tek message sahnesini satır sayısına göre birden fazla sahneye böl
+    // (güvenli alan garantisi — renderer her sahneyi kendi sınırları içinde çizer)
+    const chunks = chunkLines(all, 4);
+    let cursor = msgScene.start;
+    scenes = scenes.filter((s) => s !== msgScene);
+    chunks.forEach((chunk, ci) => {
+      const chEnd = chunk[chunk.length - 1].end + 0.25;
+      const start = Math.max(cursor, chunk[0].start);
+      const end = Math.max(chEnd, start + 0.8);
+      const id = ci === 0 ? 'message' : 'message-' + (ci + 1);
+      scenes.push({ id, type: 'message', start, end, dur: end - start, animation: 'message', phrases: chunk });
+      cursor = end;
     });
+    // son sahne outro'ysa süreyi yeni mesaj sonuna göre güncelle
+    videoDuration = scenes[scenes.length - 1].end + 0.5;
   }
   return { scenes, phrases: lines, videoDuration, timing: 'approx' };
 }
